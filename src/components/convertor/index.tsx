@@ -21,6 +21,7 @@ const options: SegmentedOptions<string> = AdapterList.map((a) => {
 });
 
 const Convertor: React.FC = () => {
+  const [modal, modalContextHolder] = Modal.useModal();
   const [selectedKey, setSelectedKey] = useState<string>(AdapterList[0]?.key);
   const [sourceFile, setSourceFile] = useState<File>();
   const [csv, setCsv] = useState<string>();
@@ -43,7 +44,7 @@ const Convertor: React.FC = () => {
       setCsv(csv);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      Modal.error({
+      modal.error({
         title: '文件解析失败',
         content: message,
         onOk: resetState,
@@ -73,6 +74,7 @@ const Convertor: React.FC = () => {
 
   return (
     <div className="app-convertor">
+      {modalContextHolder}
       <Segmented<string>
         className="app-convertor-selector"
         options={options}
