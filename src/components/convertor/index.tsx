@@ -1,4 +1,4 @@
-import { Button, Modal, Segmented, Upload } from "antd";
+import { App as AntdApp, Button, Segmented, Upload } from "antd";
 import React, { useState } from "react";
 import { SegmentedOptions } from "antd/es/segmented";
 import { RcFile } from "antd/es/upload";
@@ -21,7 +21,7 @@ const options: SegmentedOptions<string> = AdapterList.map((a) => {
 });
 
 const Convertor: React.FC = () => {
-  const [modal, modalContextHolder] = Modal.useModal();
+  const { modal } = AntdApp.useApp();
   const [selectedKey, setSelectedKey] = useState<string>(AdapterList[0]?.key);
   const [sourceFile, setSourceFile] = useState<File>();
   const [csv, setCsv] = useState<string>();
@@ -74,7 +74,6 @@ const Convertor: React.FC = () => {
 
   return (
     <div className="app-convertor">
-      {modalContextHolder}
       <Segmented<string>
         className="app-convertor-selector"
         options={options}
