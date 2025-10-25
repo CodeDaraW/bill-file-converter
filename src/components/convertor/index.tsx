@@ -40,6 +40,7 @@ const Convertor: React.FC = () => {
   const handleUpload = async (file: RcFile) => {
     try {
       setSourceFile(file);
+      setCsv(undefined);
       const csv = await selectedAdapter.converter(file);
       setCsv(csv);
     } catch (error) {
