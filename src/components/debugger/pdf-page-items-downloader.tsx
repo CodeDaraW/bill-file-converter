@@ -11,7 +11,11 @@ const PdfPageItemsDownloader: React.FC = () => {
     const reader = new FileReader();
     reader.onload = async (e) => {
       const typedArray = new Uint8Array(e.target?.result as ArrayBuffer);
-      const pdf = await pdfjs.getDocument(typedArray).promise;
+      const pdf = await pdfjs.getDocument({
+        data: typedArray,
+        cMapUrl: `//cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjs.version}/cmaps/`,
+        cMapPacked: true,
+      }).promise;
       setPdf(pdf);
       setNumPages(pdf.numPages);
     };
