@@ -29,3 +29,9 @@ coverage
 desensitize
 
 .pnpm-store
+
+# Go CLI outputs
+/bill-file-converter
+output
+output-*
+config.json
