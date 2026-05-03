@@ -18,6 +18,9 @@ func TestListTypes(t *testing.T) {
 	if !strings.Contains(out.String(), "cmb_debit") {
 		t.Fatalf("missing adapter list: %s", out.String())
 	}
+	if !strings.Contains(out.String(), "abc_debit") {
+		t.Fatalf("missing abc_debit in adapter list: %s", out.String())
+	}
 }
 
 func TestConfigInit(t *testing.T) {
