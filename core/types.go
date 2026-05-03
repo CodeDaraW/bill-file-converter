@@ -34,6 +34,7 @@ type Options struct {
 	Temperature     float64
 	taskID          string
 	processLog      *processLogger
+	auditWriter     *auditWriter
 }
 
 type AdapterRegistry interface {
@@ -87,6 +88,7 @@ type Artifacts struct {
 	JSONPath   string      `json:"json_path,omitempty"`
 	CSVPath    string      `json:"csv_path,omitempty"`
 	LogPath    string      `json:"log_path,omitempty"`
+	AuditDir   string      `json:"audit_dir,omitempty"`
 	CSVBytes   []byte      `json:"-"`
 	JSONBytes  []byte      `json:"-"`
 }

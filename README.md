@@ -124,12 +124,29 @@ go run ./cmd/bill-file-converter convert ./page-1.pdf ./page-2.pdf ./page-3.pdf 
 
 每次转换都会创建一个定长 task id，并将所有产物写入 `--out <task_id>/`，避免多次运行互相覆盖。task id 格式为日期 + 时间 + crypto 随机后缀，例如 `20260501-153045-a1b2c3d4`。
 
-输出文件：
+输出目录布局：
 
-- `output/<task_id>/result.json`：源文件信息、本地时区生成时间、metadata、表格、校验报告和 artifact 路径。
-- `output/<task_id>/result.csv`：严格表格 CSV，只包含表头和数据行；标题和文档级信息属于 `metadata`。
-- `output/<task_id>/pages/*.png`：PDF 渲染出的页面图片。
-- `output/<task_id>/bill_file_converter.log`：固定日志文件，包含带时间戳、task id 和日志级别的阶段事件，也包含 provider raw request、raw response 和失败信息。
+```
+output/<task_id>/
+├── result/
+│   ├── result.json
+│   └── result.csv
+└── intermediate/
+    ├── bill_file_converter.log
+    ├── pages/
+    │   └── page-N.png
+    └── audit/
+        ├── <stage>_request.json
+        ├── <stage>_response.json
+        └── failure.json   # 仅在失败时
+```
+
+- `result/result.json`：源文件信息、本地时区生成时间、metadata、表格、校验报告和 artifact 路径，是最终产物。
+- `result/result.csv`：严格表格 CSV，只包含表头和数据行；标题和文档级信息属于 `metadata`。
+- `intermediate/bill_file_converter.log`：带时间戳、task id 和日志级别的阶段事件，仅文本，不再嵌入大段 JSON，便于编辑器打开。
+- `intermediate/pages/*.png`：PDF 渲染出的页面图片。
+- `intermediate/audit/<stage>_request.json` / `<stage>_response.json`：每个 VLM 调用阶段（如 `seed_pages`、`page_<n>`）的原始请求体和响应体，独立成文件方便调试和回溯。
+- `intermediate/audit/failure.json`：失败时写入，包含 source、adapter、task id、时间戳和错误信息。
 
 只检查流程、不生成 CSV：
 
@@ -153,13 +170,13 @@ go run ./cmd/bill-file-converter providers test --config config.json
 必须满足：
 
 - 每条 CLI 日志必须包含时间戳和 task id。
-- 每个 task 必须写入固定文件 `bill_file_converter.log`，记录带时间戳、task id 和日志级别的阶段事件。
+- 每个 task 必须写入固定文件 `intermediate/bill_file_converter.log`，记录带时间戳、task id 和日志级别的阶段事件。
 - 日志级别只使用 `verbose`、`info`、`warning`、`error` 四类。
-- PDF 渲染出的页面图片必须保留在 `pages/` 下。
-- Provider raw request 和 raw response 必须写入 `bill_file_converter.log`，按阶段/页码使用 `seed_pages_raw_request`、`page_<n>_raw_request` 等 block 记录。
-- raw request 和 raw response 必须在解析模型 JSON 前写入日志，确保 parse 失败也可调试。
-- 成功转换必须写入 `result.json`；非 inspect 转换还必须写入 `result.csv`。
-- 任务目录创建后发生失败时，必须在 `bill_file_converter.log` 中写入 `failure` block，包含 source、adapter、task id、时间戳和错误信息。
+- PDF 渲染出的页面图片必须保留在 `intermediate/pages/` 下。
+- Provider raw request 和 raw response 必须按阶段/页码独立落盘到 `intermediate/audit/<stage>_request.json` 与 `<stage>_response.json`，例如 `seed_pages_request.json`、`page_<n>_request.json`，不得嵌入到日志文本中。
+- raw request 和 raw response 必须在解析模型 JSON 前写入文件，确保 parse 失败也可调试。
+- 成功转换必须写入 `result/result.json`；非 inspect 转换还必须写入 `result/result.csv`。
+- 任务目录创建后发生失败时，必须写入 `intermediate/audit/failure.json`，包含 source、adapter、task id、时间戳和错误信息。
 - CSV 只能包含表格数据；metadata、标题、source、task、校验信息都必须放在 JSON artifact 中。
 
 ## Prompt 编写规则
@@ -188,8 +205,8 @@ go run ./cmd/bill-file-converter providers test --config config.json
 1. `go test ./...` 通过。
 2. `go run ./cmd/bill-file-converter list-types` 能看到目标 adapter key。
 3. `go run ./cmd/bill-file-converter providers test --config config.json` 成功。
-4. `convert` 生成 `result.json` 和 `result.csv`。
-5. 日志包含 task id，产物写入 `output/<task_id>/`。
+4. `convert` 生成 `result/result.json` 和 `result/result.csv`。
+5. 日志包含 task id，所有产物写入 `output/<task_id>/`。
 6. `result.json.task_id` 与输出目录名一致。
 7. `result.json.source` 记录源 PDF 路径/文件名，`generated_at` 使用机器本地时区。
 8. `result.json.metadata` 包含 adapter 必需的源文件元信息。

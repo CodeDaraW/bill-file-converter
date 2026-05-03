@@ -157,7 +157,7 @@ func TestConvertWritesJSONAndCSV(t *testing.T) {
 		t.Fatalf("provider request not populated: %#v", provider.req)
 	}
 	taskDir := filepath.Join(dir, result.TaskID)
-	csvData, err := os.ReadFile(filepath.Join(taskDir, "result.csv"))
+	csvData, err := os.ReadFile(filepath.Join(taskDir, "result", "result.csv"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,14 +171,14 @@ func TestConvertWritesJSONAndCSV(t *testing.T) {
 	if !strings.Contains(csvText, `2024-01-01,CNY,,"¥1,234.00","商户,含逗号",对手方,客户摘要`) {
 		t.Fatalf("csv did not escape comma/null as expected: %q", csvText)
 	}
-	jsonData, err := os.ReadFile(filepath.Join(taskDir, "result.json"))
+	jsonData, err := os.ReadFile(filepath.Join(taskDir, "result", "result.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(jsonData), `"metadata"`) {
 		t.Fatalf("json missing metadata: %s", jsonData)
 	}
-	logData, err := os.ReadFile(filepath.Join(taskDir, "bill_file_converter.log"))
+	logData, err := os.ReadFile(filepath.Join(taskDir, "intermediate", "bill_file_converter.log"))
 	if err != nil {
 		t.Fatalf("expected bill_file_converter.log: %v", err)
 	}
@@ -186,14 +186,17 @@ func TestConvertWritesJSONAndCSV(t *testing.T) {
 	if !strings.Contains(logText, "[INFO]") {
 		t.Fatalf("expected INFO log level, got %q", string(logData))
 	}
-	if !strings.Contains(logText, "raw_request BEGIN") || !strings.Contains(logText, "raw_response BEGIN") {
-		t.Fatalf("expected raw provider audit in log, got %q", logText)
+	if strings.Contains(logText, "BEGIN") || strings.Contains(logText, "END") {
+		t.Fatalf("log should no longer contain inline JSON blocks, got %q", logText)
 	}
-	if _, err := os.Stat(filepath.Join(taskDir, "raw_request.json")); !os.IsNotExist(err) {
-		t.Fatalf("expected no raw_request.json, stat err=%v", err)
+	auditDir := filepath.Join(taskDir, "intermediate", "audit")
+	for _, name := range []string{"page_1_request.json", "page_1_response.json"} {
+		if _, err := os.Stat(filepath.Join(auditDir, name)); err != nil {
+			t.Fatalf("expected audit file %s: %v", name, err)
+		}
 	}
-	if _, err := os.Stat(filepath.Join(taskDir, "raw_response.json")); !os.IsNotExist(err) {
-		t.Fatalf("expected no raw_response.json, stat err=%v", err)
+	if _, err := os.Stat(filepath.Join(auditDir, "failure.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected no failure.json on success, stat err=%v", err)
 	}
 	if !strings.Contains(logs.String(), "["+result.TaskID+"]") || !strings.Contains(logs.String(), "T") || !strings.Contains(logs.String(), "rendering PDF pages") || !strings.Contains(logs.String(), "done") {
 		t.Fatalf("expected progress logs, got %q", logs.String())
@@ -284,13 +287,18 @@ func TestConvertParsesFirstPageThenRemainingPages(t *testing.T) {
 	if strings.Contains(string(result.Artifacts.CSVBytes), "\n\n") {
 		t.Fatalf("csv should not contain blank lines: %q", string(result.Artifacts.CSVBytes))
 	}
-	logData, err := os.ReadFile(filepath.Join(dir, result.TaskID, "bill_file_converter.log"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	logText := string(logData)
-	if !strings.Contains(logText, "seed_pages_raw_request BEGIN") || !strings.Contains(logText, "page_2_raw_request BEGIN") || !strings.Contains(logText, "page_3_raw_response BEGIN") {
-		t.Fatalf("expected per-page raw audit blocks, got %q", logText)
+	auditDir := filepath.Join(dir, result.TaskID, "intermediate", "audit")
+	for _, name := range []string{
+		"seed_pages_request.json",
+		"seed_pages_response.json",
+		"page_2_request.json",
+		"page_2_response.json",
+		"page_3_request.json",
+		"page_3_response.json",
+	} {
+		if _, statErr := os.Stat(filepath.Join(auditDir, name)); statErr != nil {
+			t.Fatalf("expected per-page audit file %s: %v", name, statErr)
+		}
 	}
 }
 
@@ -358,13 +366,19 @@ func TestConvertCanDisableSeedParsingPerAdapter(t *testing.T) {
 	if len(result.Tables[0].SourcePages) != 2 || result.Tables[0].SourcePages[0] != 1 || result.Tables[0].SourcePages[1] != 2 {
 		t.Fatalf("expected source_pages to be overridden from actual page numbers, got %#v", result.Tables[0].SourcePages)
 	}
-	logData, err := os.ReadFile(filepath.Join(dir, result.TaskID, "bill_file_converter.log"))
-	if err != nil {
-		t.Fatal(err)
+	auditDir := filepath.Join(dir, result.TaskID, "intermediate", "audit")
+	for _, name := range []string{
+		"page_1_request.json",
+		"page_1_response.json",
+		"page_2_request.json",
+		"page_2_response.json",
+	} {
+		if _, statErr := os.Stat(filepath.Join(auditDir, name)); statErr != nil {
+			t.Fatalf("expected per-page audit file %s: %v", name, statErr)
+		}
 	}
-	logText := string(logData)
-	if !strings.Contains(logText, "page_1_raw_request BEGIN") || !strings.Contains(logText, "page_2_raw_request BEGIN") || strings.Contains(logText, "all_pages_raw_request BEGIN") {
-		t.Fatalf("expected per-page audit blocks only, got %q", logText)
+	if _, statErr := os.Stat(filepath.Join(auditDir, "all_pages_request.json")); !os.IsNotExist(statErr) {
+		t.Fatalf("did not expect all_pages_request.json, stat err=%v", statErr)
 	}
 }
 
@@ -455,16 +469,13 @@ func TestConvertWritesAuditArtifactsOnParseError(t *testing.T) {
 		t.Fatalf("expected exactly one task dir, got %#v", entries)
 	}
 	taskDir := filepath.Join(dir, entries[0].Name())
-	if _, statErr := os.Stat(filepath.Join(taskDir, "raw_request.json")); !os.IsNotExist(statErr) {
-		t.Fatalf("expected no raw_request.json after parse error, stat err=%v", statErr)
+	auditDir := filepath.Join(taskDir, "intermediate", "audit")
+	for _, name := range []string{"page_1_request.json", "page_1_response.json", "failure.json"} {
+		if _, statErr := os.Stat(filepath.Join(auditDir, name)); statErr != nil {
+			t.Fatalf("expected audit file %s after parse error: %v", name, statErr)
+		}
 	}
-	if _, statErr := os.Stat(filepath.Join(taskDir, "raw_response.json")); !os.IsNotExist(statErr) {
-		t.Fatalf("expected no raw_response.json after parse error, stat err=%v", statErr)
-	}
-	if _, statErr := os.Stat(filepath.Join(taskDir, "failure.json")); !os.IsNotExist(statErr) {
-		t.Fatalf("expected no failure.json after parse error, stat err=%v", statErr)
-	}
-	logData, statErr := os.ReadFile(filepath.Join(taskDir, "bill_file_converter.log"))
+	logData, statErr := os.ReadFile(filepath.Join(taskDir, "intermediate", "bill_file_converter.log"))
 	if statErr != nil {
 		t.Fatalf("expected bill_file_converter.log after parse error: %v", statErr)
 	}
@@ -472,8 +483,11 @@ func TestConvertWritesAuditArtifactsOnParseError(t *testing.T) {
 	if !strings.Contains(logText, "[ERROR]") {
 		t.Fatalf("expected ERROR log level after parse error, got %q", logText)
 	}
-	if !strings.Contains(logText, "raw_request BEGIN") || !strings.Contains(logText, "raw_response BEGIN") || !strings.Contains(logText, "failure BEGIN") {
-		t.Fatalf("expected raw request, raw response, and failure blocks in log, got %q", logText)
+	if strings.Contains(logText, "BEGIN") || strings.Contains(logText, "END") {
+		t.Fatalf("log should no longer contain inline JSON blocks, got %q", logText)
+	}
+	if !strings.Contains(logText, "wrote failure summary to") {
+		t.Fatalf("log should reference failure.json, got %q", logText)
 	}
 }
 
@@ -575,7 +589,7 @@ func TestConvertReturnsValidationErrorAndStillWritesJSON(t *testing.T) {
 	if !result.ValidationReport.HasErrors() {
 		t.Fatalf("expected validation errors: %#v", result.ValidationReport)
 	}
-	if _, statErr := os.Stat(filepath.Join(dir, result.TaskID, "result.json")); statErr != nil {
+	if _, statErr := os.Stat(filepath.Join(dir, result.TaskID, "result", "result.json")); statErr != nil {
 		t.Fatalf("expected result.json to be written: %v", statErr)
 	}
 	if !strings.Contains(logs.String(), "validation error:") {
@@ -584,7 +598,7 @@ func TestConvertReturnsValidationErrorAndStillWritesJSON(t *testing.T) {
 	if !strings.Contains(logs.String(), "\033[31m") {
 		t.Fatalf("expected error logs to be red in std output, got %q", logs.String())
 	}
-	logData, readErr := os.ReadFile(filepath.Join(dir, result.TaskID, "bill_file_converter.log"))
+	logData, readErr := os.ReadFile(filepath.Join(dir, result.TaskID, "intermediate", "bill_file_converter.log"))
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
@@ -639,7 +653,7 @@ func TestConvertSkipCSV(t *testing.T) {
 	if result.Artifacts.CSVPath != "" || len(result.Artifacts.CSVBytes) != 0 {
 		t.Fatalf("expected csv to be skipped: %#v", result.Artifacts)
 	}
-	if _, err := os.Stat(filepath.Join(dir, result.TaskID, "result.csv")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, result.TaskID, "result", "result.csv")); !os.IsNotExist(err) {
 		t.Fatalf("expected no result.csv, stat err=%v", err)
 	}
 }

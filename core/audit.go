@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -54,26 +55,57 @@ func (l *processLogger) Write(level LogLevel, message string) string {
 	return line
 }
 
-func (l *processLogger) WriteBlock(level LogLevel, label string, content string) {
-	if l == nil || l.file == nil || content == "" {
-		return
-	}
-	level = normalizeLogLevel(level)
-	timestamp := time.Now().Format(time.RFC3339)
-	header := fmt.Sprintf("%s [%s] [%s] %s BEGIN", timestamp, strings.ToUpper(string(level)), l.taskID, label)
-	footer := fmt.Sprintf("%s [%s] [%s] %s END", timestamp, strings.ToUpper(string(level)), l.taskID, label)
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	_, _ = l.file.WriteString(header + "\n")
-	_, _ = l.file.WriteString(content + "\n")
-	_, _ = l.file.WriteString(footer + "\n")
-}
-
 func (l *processLogger) Close() {
 	if l == nil || l.file == nil {
 		return
 	}
 	_ = l.file.Close()
+}
+
+// auditWriter persists provider raw requests, raw responses and failure
+// summaries as standalone JSON files under intermediateDir/audit. Keeping
+// these large JSON blobs out of the line-based log keeps the log file small
+// enough to comfortably open and syntax-highlight in editors.
+type auditWriter struct {
+	dir string
+	mu  sync.Mutex
+}
+
+func newAuditWriter(dir string) (*auditWriter, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	return &auditWriter{dir: dir}, nil
+}
+
+func (a *auditWriter) writeRaw(name string, content string) (string, error) {
+	if a == nil || content == "" {
+		return "", nil
+	}
+	path := filepath.Join(a.dir, name)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func (a *auditWriter) writeJSON(name string, payload any) (string, error) {
+	if a == nil {
+		return "", nil
+	}
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(a.dir, name)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 type failureArtifact struct {
@@ -86,7 +118,7 @@ type failureArtifact struct {
 }
 
 func logFailure(options Options, input Input, adapterName string, err error) {
-	if err == nil {
+	if err == nil || options.auditWriter == nil {
 		return
 	}
 	artifact := failureArtifact{
@@ -99,9 +131,10 @@ func logFailure(options Options, input Input, adapterName string, err error) {
 	if adapterName != "" {
 		artifact.Adapter = adapterName
 	}
-	data, err := json.MarshalIndent(artifact, "", "  ")
-	if err != nil {
+	path, writeErr := options.auditWriter.writeJSON("failure.json", artifact)
+	if writeErr != nil {
+		logErrorf(options, "failed to persist failure.json: %s", writeErr)
 		return
 	}
-	logBlock(options, LogError, "failure", string(data))
+	logErrorf(options, "wrote failure summary to %s", path)
 }

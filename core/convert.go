@@ -34,10 +34,21 @@ func Convert(ctx context.Context, input Input, options Options) (Result, error) 
 		baseOutputDir = "."
 	}
 	options.OutputDir = filepath.Join(baseOutputDir, options.taskID)
-	if err := os.MkdirAll(options.OutputDir, 0o755); err != nil {
+	resultDir := filepath.Join(options.OutputDir, "result")
+	intermediateDir := filepath.Join(options.OutputDir, "intermediate")
+	auditDir := filepath.Join(intermediateDir, "audit")
+	imageDir := filepath.Join(intermediateDir, "pages")
+	for _, dir := range []string{resultDir, intermediateDir, imageDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return Result{}, err
+		}
+	}
+	auditWriter, err := newAuditWriter(auditDir)
+	if err != nil {
 		return Result{}, err
 	}
-	processLog, err := newProcessLogger(filepath.Join(options.OutputDir, "bill_file_converter.log"), options.taskID)
+	options.auditWriter = auditWriter
+	processLog, err := newProcessLogger(filepath.Join(intermediateDir, "bill_file_converter.log"), options.taskID)
 	if err != nil {
 		return Result{}, err
 	}
@@ -79,7 +90,6 @@ func Convert(ctx context.Context, input Input, options Options) (Result, error) 
 		return Result{}, err
 	}
 
-	imageDir := filepath.Join(options.OutputDir, "pages")
 	logInfof(options, "rendering PDF pages to %s", imageDir)
 	images, err := renderInputPages(ctx, input, options, imageDir)
 	if err != nil {
@@ -120,12 +130,13 @@ func Convert(ctx context.Context, input Input, options Options) (Result, error) 
 		Artifacts: Artifacts{
 			PageImages: images,
 			CSVBytes:   csvBytes,
-			LogPath:    filepath.Join(options.OutputDir, "bill_file_converter.log"),
+			LogPath:    filepath.Join(intermediateDir, "bill_file_converter.log"),
+			AuditDir:   auditDir,
 		},
 	}
 
 	logInfof(options, "writing artifacts to %s", options.OutputDir)
-	if err := writeArtifacts(options.OutputDir, &result); err != nil {
+	if err := writeArtifacts(resultDir, &result); err != nil {
 		logErrorf(options, "writing result artifacts failed: %s", err)
 		logFailure(options, input, adapter.Name, err)
 		return Result{}, err
@@ -652,12 +663,12 @@ func sourceFileInfo(input InputFile) SourceFileInfo {
 	}
 }
 
-func writeArtifacts(outputDir string, result *Result) error {
-	jsonPath := filepath.Join(outputDir, "result.json")
+func writeArtifacts(resultDir string, result *Result) error {
+	jsonPath := filepath.Join(resultDir, "result.json")
 	result.Artifacts.JSONPath = jsonPath
 
 	if len(result.Artifacts.CSVBytes) > 0 {
-		csvPath := filepath.Join(outputDir, "result.csv")
+		csvPath := filepath.Join(resultDir, "result.csv")
 		result.Artifacts.CSVPath = csvPath
 	}
 
@@ -687,8 +698,25 @@ func rawResponseText(response VLMResponse) string {
 }
 
 func logProviderAudit(options Options, label string, response VLMResponse) {
-	logBlock(options, LogVerbose, label+"_raw_request", response.RawRequest)
-	logBlock(options, LogVerbose, label+"_raw_response", rawResponseText(response))
+	if options.auditWriter == nil {
+		return
+	}
+	if response.RawRequest != "" {
+		path, err := options.auditWriter.writeRaw(label+"_request.json", response.RawRequest)
+		if err != nil {
+			logErrorf(options, "failed to persist %s request: %s", label, err)
+		} else if path != "" {
+			logVerbosef(options, "wrote %s raw request to %s", label, path)
+		}
+	}
+	if rawText := rawResponseText(response); rawText != "" {
+		path, err := options.auditWriter.writeRaw(label+"_response.json", rawText)
+		if err != nil {
+			logErrorf(options, "failed to persist %s response: %s", label, err)
+		} else if path != "" {
+			logVerbosef(options, "wrote %s raw response to %s", label, path)
+		}
+	}
 }
 
 func extractJSON(text string) string {
@@ -715,13 +743,6 @@ func logWarningf(options Options, format string, args ...any) {
 
 func logErrorf(options Options, format string, args ...any) {
 	logWithLevel(options, LogError, format, args...)
-}
-
-func logBlock(options Options, level LogLevel, label string, content string) {
-	if options.processLog == nil {
-		return
-	}
-	options.processLog.WriteBlock(level, label, content)
 }
 
 func logWithLevel(options Options, level LogLevel, format string, args ...any) {
