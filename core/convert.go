@@ -1,3 +1,10 @@
+// Prompt safety:
+// 本文件中的 continuationPrompt 拼接会随源码一起公开发布。除了运行时由 seed 阶段
+// 注入的表头/表名等结构信息，prompt 字面量本身严禁嵌入任何来自真实账单的数据
+// （账号、姓名、申请时间、验证码、电子流水号、统计周期、PDF 文件名等），即使是
+// 部分星号脱敏的形式。示例值必须明显是占位符。完整规则参见 README.md 的
+// "Prompt 编写规则"。
+
 package core
 
 import (

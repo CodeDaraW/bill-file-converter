@@ -1,3 +1,14 @@
+// Prompt safety:
+// 本文件中的所有 prompt 字面量（commonPrompt 及各 adapter 的 Prompt 字段）都会
+// 随源码一起公开发布，严禁嵌入任何来自真实账单的数据，包括账号、姓名、申请时间、
+// 验证码、电子流水号、统计周期、PDF 文件名等。即使采用 "前 4 位 + 末 4 位" 的星号
+// 脱敏格式，只要剩余字符来自真实账户也属于泄漏。
+//
+// 示例值必须明显是占位符（例如 张三、6200********0000、X*****、2025-01-01 12:00），
+// 并使用未来年份或显然虚构的日期范围。完整规则参见 README.md 的 "Prompt 编写规则"。
+// 如果发现已 commit 的 prompt 含真实数据，必须 rewrite history 并 force-push，
+// 不能仅在新 commit 中删除。
+
 package adapters
 
 const commonPrompt = `你正在从 PDF 页面渲染图片中提取银行账单表格。

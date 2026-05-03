@@ -162,6 +162,25 @@ go run ./cmd/bill-file-converter providers test --config config.json
 - 任务目录创建后发生失败时，必须在 `bill_file_converter.log` 中写入 `failure` block，包含 source、adapter、task id、时间戳和错误信息。
 - CSV 只能包含表格数据；metadata、标题、source、task、校验信息都必须放在 JSON artifact 中。
 
+## Prompt 编写规则
+
+所有发送给 VLM 的 prompt 文本（包括 `core/adapters` 下的 adapter prompt、`commonPrompt`，以及 `core/convert.go` 中动态拼接的 `continuationPrompt`）都被视为公开源代码，可能被发布到 GitHub、镜像仓库或第三方索引。因此严禁在 prompt 字符串中嵌入任何真实的个人或机构数据：
+
+- 禁止出现真实账号、卡号、身份证号、电话号码、姓名、地址、机构内部编号等，即使经过部分星号脱敏（例如 `6200********0000` 这种"前 4 位 + 末 4 位"模式仍可能被关联到真实账户）。
+- 禁止出现真实的账单时间区间、申请时间、验证码、电子流水号等，哪怕看上去像随机字符串——只要它来自某一份真实账单，就必须替换。
+- 禁止把真实 PDF 文件名、路径或下载链接写进 prompt。
+- 示例值必须明显是占位符，例如 `张三`、`6200********0000`、`X*****`、`2025-01-01 12:00`，并使用未来年份或显然虚构的日期范围（如 `2025-01-01 -- 2025-12-31`）。
+- 如果模型 prompt 需要展示某种格式（例如紧凑日期 `20250101-20251231`），所选示例必须不与任何真实账单字面量重合。
+- 同样的规则适用于代码注释、单元测试 fixture 和 README 中的示例。
+
+新增或修改 prompt 时，自检流程：
+
+1. `git grep` 一遍新增的字面量，确认没有出现在任何真实账单文件名、output 目录或个人笔记中。
+2. 如果是从真实账单上抄过来的字段，必须替换为占位符再提交。
+3. Code review 截图、错误日志、issue 描述同样适用本规则——上传前先脱敏。
+
+如果意外把真实数据 commit 进了仓库，必须 rewrite history（参见 `git rebase`、`git filter-repo`）并 force-push，而不是仅在新 commit 中删除。
+
 ## 验收清单
 
 新环境或新 adapter 按以下清单验收：
@@ -224,8 +243,9 @@ result, err := core.Convert(ctx, input, core.Options{
 
 1. 在 `core/adapters/builtin.go` 增加 adapter constructor，例如 `bocCreditAdapter()`。
 2. 设置稳定 key、可读名称、必需 metadata key、精确表头和 adapter 专用 prompt。
-3. 只有当 prompt/profile 足够明确、能安全拒绝不支持格式时，才注册进 `builtinAdapters()`。
-4. 使用页面图片 fixture 和 fake VLM JSON 增加 golden tests。
-5. 执行 `go test ./...`，并用脱敏 PDF 做一次真实 `convert` 后，才视为支持。
+3. 编写 prompt 时严格遵循 [Prompt 编写规则](#prompt-编写规则)，所有示例值必须使用明显占位符，禁止嵌入真实账单数据。
+4. 只有当 prompt/profile 足够明确、能安全拒绝不支持格式时，才注册进 `builtinAdapters()`。
+5. 使用页面图片 fixture 和 fake VLM JSON 增加 golden tests。
+6. 执行 `go test ./...`，并用脱敏 PDF 做一次真实 `convert` 后，才视为支持。
 
 未注册的账单类型会被明确拒绝。
