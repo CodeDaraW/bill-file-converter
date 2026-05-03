@@ -60,7 +60,9 @@ go run ./cmd/bill-file-converter config init -out config.json
 }
 ```
 
-如果使用 LM Studio，请先启动本地 OpenAI-compatible server。若服务端不需要真实 key，`api_key_env` 可以指向任意环境变量。若使用托管服务，请按需设置 `provider`、`base_url`、`model` 和 `api_key_env`。
+如果使用 LM Studio，请先启动本地 OpenAI-compatible server。若服务端不需要真实 key，`api_key_env` 可以指向任意环境变量（包括未设置的变量）。若使用托管服务，请按需设置 `provider`、`base_url`、`model` 和 `api_key_env`。
+
+为避免 API key 被错误地写入到配置文件并提交到版本控制，配置文件中**不允许**直接出现 `api_key` 字段；必须通过 `api_key_env` 指向一个环境变量，由运行时从该环境变量读取 key。如果在 `config.json` 中出现 `api_key`，加载时会直接报错。
 
 支持的 provider 值：
 

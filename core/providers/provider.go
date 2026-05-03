@@ -22,7 +22,6 @@ import (
 type ProviderConfig struct {
 	Provider             string            `json:"provider"`
 	BaseURL              string            `json:"base_url"`
-	APIKey               string            `json:"api_key"`
 	APIKeyEnv            string            `json:"api_key_env"`
 	Model                string            `json:"model"`
 	Headers              map[string]string `json:"headers"`
@@ -38,7 +37,6 @@ func (c ProviderConfig) MarshalJSON() ([]byte, error) {
 	type providerConfigJSON struct {
 		Provider             string            `json:"provider"`
 		BaseURL              string            `json:"base_url"`
-		APIKey               string            `json:"api_key"`
 		APIKeyEnv            string            `json:"api_key_env"`
 		Model                string            `json:"model"`
 		Headers              map[string]string `json:"headers,omitempty"`
@@ -56,7 +54,6 @@ func (c ProviderConfig) MarshalJSON() ([]byte, error) {
 	return json.Marshal(providerConfigJSON{
 		Provider:             c.Provider,
 		BaseURL:              c.BaseURL,
-		APIKey:               c.APIKey,
 		APIKeyEnv:            c.APIKeyEnv,
 		Model:                c.Model,
 		Headers:              c.Headers,
@@ -70,10 +67,16 @@ func (c ProviderConfig) MarshalJSON() ([]byte, error) {
 }
 
 func (c *ProviderConfig) UnmarshalJSON(data []byte) error {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return err
+	}
+	if _, ok := probe["api_key"]; ok {
+		return fmt.Errorf(`provider config: "api_key" is not allowed in config files; set "api_key_env" and provide the key via that environment variable`)
+	}
 	type providerConfigJSON struct {
 		Provider             string            `json:"provider"`
 		BaseURL              string            `json:"base_url"`
-		APIKey               string            `json:"api_key"`
 		APIKeyEnv            string            `json:"api_key_env"`
 		Model                string            `json:"model"`
 		Headers              map[string]string `json:"headers"`
@@ -91,7 +94,6 @@ func (c *ProviderConfig) UnmarshalJSON(data []byte) error {
 	*c = ProviderConfig{
 		Provider:             decoded.Provider,
 		BaseURL:              decoded.BaseURL,
-		APIKey:               decoded.APIKey,
 		APIKeyEnv:            decoded.APIKeyEnv,
 		Model:                decoded.Model,
 		Headers:              decoded.Headers,
@@ -148,13 +150,10 @@ func newHTTPProvider(config ProviderConfig) httpProvider {
 }
 
 func (p httpProvider) apiKey() string {
-	if p.config.APIKey != "" {
-		return p.config.APIKey
+	if p.config.APIKeyEnv == "" {
+		return ""
 	}
-	if p.config.APIKeyEnv != "" {
-		return os.Getenv(p.config.APIKeyEnv)
-	}
-	return ""
+	return os.Getenv(p.config.APIKeyEnv)
 }
 
 func (p httpProvider) ping(ctx context.Context, endpoint string, headers map[string]string) error {

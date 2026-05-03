@@ -37,6 +37,27 @@ func TestConfigInit(t *testing.T) {
 	}
 }
 
+func TestLoadConfigRejectsInlineAPIKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	contents := `{
+  "provider": {
+    "provider": "openai-compatible",
+    "base_url": "http://localhost:1234/v1",
+    "api_key": "sk-should-not-be-here",
+    "model": "vlm"
+  }
+}`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadConfig(path); err == nil {
+		t.Fatal("expected LoadConfig to reject inline api_key")
+	} else if !strings.Contains(err.Error(), "api_key") {
+		t.Fatalf("expected error to mention api_key, got: %v", err)
+	}
+}
+
 func TestConvertRequiresPDFArgument(t *testing.T) {
 	var out, errOut bytes.Buffer
 	code := Run(context.Background(), []string{"convert", "-type", "cmb_debit"}, &out, &errOut)

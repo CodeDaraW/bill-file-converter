@@ -36,10 +36,11 @@ func TestOpenAICompatibleProviderPayload(t *testing.T) {
 	}))
 	defer server.Close()
 
+	t.Setenv("BILL_TEST_API_KEY", "test-key")
 	provider := NewOpenAICompatibleProvider(ProviderConfig{
-		BaseURL: server.URL,
-		APIKey:  "test-key",
-		Model:   "vlm",
+		BaseURL:   server.URL,
+		APIKeyEnv: "BILL_TEST_API_KEY",
+		Model:     "vlm",
 	})
 	resp, err := provider.Generate(context.Background(), core.VLMRequest{
 		Prompt: "extract",
@@ -164,9 +165,10 @@ func TestOpenAICompatibleProviderPing(t *testing.T) {
 	}))
 	defer server.Close()
 
+	t.Setenv("BILL_TEST_PING_KEY", "ping-key")
 	provider := NewOpenAICompatibleProvider(ProviderConfig{
-		BaseURL: server.URL,
-		APIKey:  "ping-key",
+		BaseURL:   server.URL,
+		APIKeyEnv: "BILL_TEST_PING_KEY",
 	})
 	if err := provider.Ping(context.Background()); err != nil {
 		t.Fatalf("ping should succeed: %v", err)
