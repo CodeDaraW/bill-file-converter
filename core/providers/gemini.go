@@ -1,10 +1,12 @@
-package core
+package providers
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
+
+	"github.com/deb-sig/bill-file-converter/core"
 )
 
 type GeminiProvider struct {
@@ -18,12 +20,20 @@ func NewGeminiProvider(config ProviderConfig) GeminiProvider {
 	return GeminiProvider{httpProvider: newHTTPProvider(config)}
 }
 
-func (p GeminiProvider) Generate(ctx context.Context, req VLMRequest) (VLMResponse, error) {
+func (p GeminiProvider) Ping(ctx context.Context) error {
+	endpoint := joinURL(p.config.BaseURL, "/models")
+	if key := p.apiKey(); key != "" {
+		endpoint = addQuery(endpoint, url.Values{"key": []string{key}})
+	}
+	return p.ping(ctx, endpoint, nil)
+}
+
+func (p GeminiProvider) Generate(ctx context.Context, req core.VLMRequest) (core.VLMResponse, error) {
 	parts := []map[string]any{{"text": req.Prompt}}
 	for _, image := range req.Images {
 		encoded, err := imageBase64(image.Path)
 		if err != nil {
-			return VLMResponse{}, err
+			return core.VLMResponse{}, err
 		}
 		mimeType := image.MIMEType
 		if mimeType == "" {
@@ -58,9 +68,10 @@ func (p GeminiProvider) Generate(ctx context.Context, req VLMRequest) (VLMRespon
 	if key := p.apiKey(); key != "" {
 		endpoint = addQuery(endpoint, url.Values{"key": []string{key}})
 	}
+	rawRequest := rawProviderRequest("POST", endpoint, body)
 	data, err := p.doJSON(ctx, "POST", endpoint, body, nil)
 	if err != nil {
-		return VLMResponse{}, err
+		return core.VLMResponse{RawRequest: rawRequest, RawResponse: string(data), Raw: string(data)}, err
 	}
 	var parsed struct {
 		Candidates []struct {
@@ -72,10 +83,15 @@ func (p GeminiProvider) Generate(ctx context.Context, req VLMRequest) (VLMRespon
 		} `json:"candidates"`
 	}
 	if err := json.Unmarshal(data, &parsed); err != nil {
-		return VLMResponse{}, err
+		return core.VLMResponse{RawRequest: rawRequest, RawResponse: string(data), Raw: string(data)}, err
 	}
 	if len(parsed.Candidates) == 0 || len(parsed.Candidates[0].Content.Parts) == 0 {
-		return VLMResponse{}, fmt.Errorf("provider returned no candidates")
+		return core.VLMResponse{RawRequest: rawRequest, RawResponse: string(data), Raw: string(data)}, fmt.Errorf("provider returned no candidates")
 	}
-	return VLMResponse{Text: parsed.Candidates[0].Content.Parts[0].Text, Raw: string(data)}, nil
+	return core.VLMResponse{
+		Text:        parsed.Candidates[0].Content.Parts[0].Text,
+		Raw:         string(data),
+		RawRequest:  rawRequest,
+		RawResponse: string(data),
+	}, nil
 }

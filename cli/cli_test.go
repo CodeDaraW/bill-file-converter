@@ -40,7 +40,7 @@ func TestConfigInit(t *testing.T) {
 func TestConvertRequiresPDFArgument(t *testing.T) {
 	var out, errOut bytes.Buffer
 	code := Run(context.Background(), []string{"convert", "-type", "cmb_debit"}, &out, &errOut)
-	if code == 0 || !strings.Contains(errOut.String(), "expected one PDF file") {
+	if code == 0 || !strings.Contains(errOut.String(), "expected at least one PDF file") {
 		t.Fatalf("code=%d stderr=%s", code, errOut.String())
 	}
 }

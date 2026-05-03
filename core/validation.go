@@ -1,8 +1,12 @@
 package core
 
-import "fmt"
+import (
+	"fmt"
 
-func ValidateDocument(doc Document, adapter Adapter) ValidationReport {
+	"github.com/deb-sig/bill-file-converter/core/adapters"
+)
+
+func ValidateDocument(doc Document, adapter adapters.Adapter) ValidationReport {
 	var report ValidationReport
 	if len(doc.Tables) == 0 {
 		report.Errors = append(report.Errors, "no tables were extracted")
@@ -39,7 +43,7 @@ func ValidateDocument(doc Document, adapter Adapter) ValidationReport {
 	return report
 }
 
-func minColumnsForTable(adapter Adapter, table Table) int {
+func minColumnsForTable(adapter adapters.Adapter, table Table) int {
 	for _, spec := range adapter.ExpectedTables {
 		if spec.Name != "" && spec.Name != table.Name {
 			continue
@@ -52,7 +56,7 @@ func minColumnsForTable(adapter Adapter, table Table) int {
 	return 0
 }
 
-func allowedHeadersForTable(adapter Adapter, table Table) [][]string {
+func allowedHeadersForTable(adapter adapters.Adapter, table Table) [][]string {
 	for _, spec := range adapter.ExpectedTables {
 		if spec.Name != "" && spec.Name != table.Name {
 			continue

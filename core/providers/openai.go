@@ -1,9 +1,11 @@
-package core
+package providers
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	"github.com/deb-sig/bill-file-converter/core"
 )
 
 type OpenAICompatibleProvider struct {
@@ -17,12 +19,20 @@ func NewOpenAICompatibleProvider(config ProviderConfig) OpenAICompatibleProvider
 	return OpenAICompatibleProvider{httpProvider: newHTTPProvider(config)}
 }
 
-func (p OpenAICompatibleProvider) Generate(ctx context.Context, req VLMRequest) (VLMResponse, error) {
+func (p OpenAICompatibleProvider) Ping(ctx context.Context) error {
+	headers := map[string]string{}
+	if key := p.apiKey(); key != "" {
+		headers["Authorization"] = "Bearer " + key
+	}
+	return p.ping(ctx, joinURL(p.config.BaseURL, "/models"), headers)
+}
+
+func (p OpenAICompatibleProvider) Generate(ctx context.Context, req core.VLMRequest) (core.VLMResponse, error) {
 	content := []map[string]any{{"type": "text", "text": req.Prompt}}
 	for _, image := range req.Images {
 		dataURL, err := imageDataURL(image.Path, image.MIMEType)
 		if err != nil {
-			return VLMResponse{}, err
+			return core.VLMResponse{}, err
 		}
 		content = append(content, map[string]any{
 			"type": "image_url",
@@ -54,9 +64,11 @@ func (p OpenAICompatibleProvider) Generate(ctx context.Context, req VLMRequest) 
 	if key := p.apiKey(); key != "" {
 		headers["Authorization"] = "Bearer " + key
 	}
-	data, err := p.doJSON(ctx, "POST", joinURL(p.config.BaseURL, "/chat/completions"), body, headers)
+	endpoint := joinURL(p.config.BaseURL, "/chat/completions")
+	rawRequest := rawProviderRequest("POST", endpoint, body)
+	data, err := p.doJSON(ctx, "POST", endpoint, body, headers)
 	if err != nil {
-		return VLMResponse{}, err
+		return core.VLMResponse{RawRequest: rawRequest, RawResponse: string(data), Raw: string(data)}, err
 	}
 	var parsed struct {
 		Choices []struct {
@@ -66,10 +78,15 @@ func (p OpenAICompatibleProvider) Generate(ctx context.Context, req VLMRequest) 
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(data, &parsed); err != nil {
-		return VLMResponse{}, err
+		return core.VLMResponse{RawRequest: rawRequest, RawResponse: string(data), Raw: string(data)}, err
 	}
 	if len(parsed.Choices) == 0 {
-		return VLMResponse{}, fmt.Errorf("provider returned no choices")
+		return core.VLMResponse{RawRequest: rawRequest, RawResponse: string(data), Raw: string(data)}, fmt.Errorf("provider returned no choices")
 	}
-	return VLMResponse{Text: parsed.Choices[0].Message.Content, Raw: string(data)}, nil
+	return core.VLMResponse{
+		Text:        parsed.Choices[0].Message.Content,
+		Raw:         string(data),
+		RawRequest:  rawRequest,
+		RawResponse: string(data),
+	}, nil
 }

@@ -1,4 +1,4 @@
-package core
+package adapters
 
 const commonPrompt = `你正在从 PDF 页面渲染图片中提取银行账单表格。
 
@@ -22,7 +22,7 @@ const commonPrompt = `你正在从 PDF 页面渲染图片中提取银行账单�
       "name": "表格名称",
       "headers": ["表头"],
       "rows": [["单元格文字或 null"]],
-      "source_pages": [1],
+      "source_pages": [],
       "warnings": ["可选警告"]
     }
   ]
@@ -39,8 +39,9 @@ func cmbDebitAdapter() Adapter {
 	headersWithoutCustomerSummary := []string{"记账日期", "货币", "交易金额", "联机余额", "交易摘要", "对手信息"}
 	headersWithCustomerSummary := []string{"记账日期", "货币", "交易金额", "联机余额", "交易摘要", "对手信息", "客户摘要"}
 	return Adapter{
-		Key:  "cmb_debit",
-		Name: "招商银行借记卡",
+		Key:       "cmb_debit",
+		Name:      "招商银行借记卡",
+		SeedPages: 0,
 		Prompt: commonPrompt + `
 
 账单类型：招商银行借记卡交易流水 PDF。

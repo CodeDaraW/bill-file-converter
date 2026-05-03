@@ -1,4 +1,4 @@
-package core
+package providers
 
 import (
 	"bytes"
@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"mime"
 	"net/http"
 	"net/url"
@@ -14,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/deb-sig/bill-file-converter/core"
 )
 
 type ProviderConfig struct {
@@ -118,7 +121,7 @@ func (c *ProviderConfig) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func NewProvider(config ProviderConfig) (VLMProvider, error) {
+func New(config ProviderConfig) (core.VLMProvider, error) {
 	switch strings.ToLower(config.Provider) {
 	case "", "openai", "openai-compatible", "lmstudio", "ollama":
 		return NewOpenAICompatibleProvider(config), nil
@@ -154,14 +157,71 @@ func (p httpProvider) apiKey() string {
 	return ""
 }
 
+func (p httpProvider) ping(ctx context.Context, endpoint string, headers map[string]string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	for key, value := range p.config.Headers {
+		req.Header.Set(key, value)
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+	client := p.client
+	if client.Timeout == 0 {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	body, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+}
+
 func (p httpProvider) doJSON(ctx context.Context, method, endpoint string, body any, headers map[string]string) ([]byte, error) {
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
+	attempts := p.config.MaxRetries + 1
+	if attempts < 1 {
+		attempts = 1
+	}
+	var (
+		lastData []byte
+		lastErr  error
+	)
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 {
+			delay := backoffDelay(attempt)
+			select {
+			case <-ctx.Done():
+				return lastData, ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+		data, status, err := p.doJSONOnce(ctx, method, endpoint, payload, headers)
+		lastData, lastErr = data, err
+		if err == nil {
+			return data, nil
+		}
+		if !isRetryableHTTPError(ctx, status, err) {
+			return data, err
+		}
+	}
+	return lastData, lastErr
+}
+
+func (p httpProvider) doJSONOnce(ctx context.Context, method, endpoint string, payload []byte, headers map[string]string) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	for key, value := range p.config.Headers {
@@ -172,17 +232,50 @@ func (p httpProvider) doJSON(ctx context.Context, method, endpoint string, body 
 	}
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, resp.StatusCode, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(data)))
+		return data, resp.StatusCode, fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(data)))
 	}
-	return data, nil
+	return data, resp.StatusCode, nil
+}
+
+func isRetryableHTTPError(ctx context.Context, status int, err error) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	if status == 0 {
+		return err != nil
+	}
+	return status == http.StatusTooManyRequests || status >= 500
+}
+
+func backoffDelay(attempt int) time.Duration {
+	base := 500 * time.Millisecond
+	max := 8 * time.Second
+	delay := time.Duration(float64(base) * math.Pow(2, float64(attempt-1)))
+	if delay > max {
+		delay = max
+	}
+	return delay
+}
+
+func rawProviderRequest(method, endpoint string, body any) string {
+	payload := map[string]any{
+		"method": method,
+		"url":    endpoint,
+		"body":   body,
+	}
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func imageDataURL(path, mimeType string) (string, error) {

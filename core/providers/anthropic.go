@@ -1,9 +1,11 @@
-package core
+package providers
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	"github.com/deb-sig/bill-file-converter/core"
 )
 
 type AnthropicProvider struct {
@@ -17,12 +19,20 @@ func NewAnthropicProvider(config ProviderConfig) AnthropicProvider {
 	return AnthropicProvider{httpProvider: newHTTPProvider(config)}
 }
 
-func (p AnthropicProvider) Generate(ctx context.Context, req VLMRequest) (VLMResponse, error) {
+func (p AnthropicProvider) Ping(ctx context.Context) error {
+	headers := map[string]string{"anthropic-version": "2023-06-01"}
+	if key := p.apiKey(); key != "" {
+		headers["x-api-key"] = key
+	}
+	return p.ping(ctx, joinURL(p.config.BaseURL, "/models"), headers)
+}
+
+func (p AnthropicProvider) Generate(ctx context.Context, req core.VLMRequest) (core.VLMResponse, error) {
 	content := []map[string]any{{"type": "text", "text": req.Prompt}}
 	for _, image := range req.Images {
 		encoded, err := imageBase64(image.Path)
 		if err != nil {
-			return VLMResponse{}, err
+			return core.VLMResponse{}, err
 		}
 		mimeType := image.MIMEType
 		if mimeType == "" {
@@ -60,9 +70,11 @@ func (p AnthropicProvider) Generate(ctx context.Context, req VLMRequest) (VLMRes
 	if key := p.apiKey(); key != "" {
 		headers["x-api-key"] = key
 	}
-	data, err := p.doJSON(ctx, "POST", joinURL(p.config.BaseURL, "/messages"), body, headers)
+	endpoint := joinURL(p.config.BaseURL, "/messages")
+	rawRequest := rawProviderRequest("POST", endpoint, body)
+	data, err := p.doJSON(ctx, "POST", endpoint, body, headers)
 	if err != nil {
-		return VLMResponse{}, err
+		return core.VLMResponse{RawRequest: rawRequest, RawResponse: string(data), Raw: string(data)}, err
 	}
 	var parsed struct {
 		Content []struct {
@@ -71,12 +83,17 @@ func (p AnthropicProvider) Generate(ctx context.Context, req VLMRequest) (VLMRes
 		} `json:"content"`
 	}
 	if err := json.Unmarshal(data, &parsed); err != nil {
-		return VLMResponse{}, err
+		return core.VLMResponse{RawRequest: rawRequest, RawResponse: string(data), Raw: string(data)}, err
 	}
 	for _, item := range parsed.Content {
 		if item.Type == "text" && item.Text != "" {
-			return VLMResponse{Text: item.Text, Raw: string(data)}, nil
+			return core.VLMResponse{
+				Text:        item.Text,
+				Raw:         string(data),
+				RawRequest:  rawRequest,
+				RawResponse: string(data),
+			}, nil
 		}
 	}
-	return VLMResponse{}, fmt.Errorf("provider returned no text content")
+	return core.VLMResponse{RawRequest: rawRequest, RawResponse: string(data), Raw: string(data)}, fmt.Errorf("provider returned no text content")
 }

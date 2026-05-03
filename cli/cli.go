@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 
 	"github.com/deb-sig/bill-file-converter/core"
+	"github.com/deb-sig/bill-file-converter/core/adapters"
+	"github.com/deb-sig/bill-file-converter/core/providers"
 )
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -41,7 +43,6 @@ func runConvert(ctx context.Context, args []string, stdout, stderr io.Writer, in
 	typeKey := fs.String("type", "", "bill type adapter key")
 	configPath := fs.String("config", "config.json", "config file path")
 	outputDir := fs.String("out", "output", "output directory")
-	debug := fs.Bool("debug", false, "save debug artifacts")
 	args = normalizeFlagArgs(args, map[string]bool{
 		"-type": true, "--type": true,
 		"-config": true, "--config": true,
@@ -50,8 +51,8 @@ func runConvert(ctx context.Context, args []string, stdout, stderr io.Writer, in
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "expected one PDF file")
+	if fs.NArg() < 1 {
+		fmt.Fprintln(stderr, "expected at least one PDF file")
 		return 2
 	}
 	config, err := LoadConfig(*configPath)
@@ -59,21 +60,31 @@ func runConvert(ctx context.Context, args []string, stdout, stderr io.Writer, in
 		fmt.Fprintf(stderr, "load config: %v\n", err)
 		return 1
 	}
-	provider, err := core.NewProvider(config.Provider)
+	provider, err := providers.New(config.Provider)
 	if err != nil {
 		fmt.Fprintf(stderr, "create provider: %v\n", err)
 		return 1
 	}
 	renderer := core.ExternalRenderer{Command: config.Renderer.Command, DPI: config.Renderer.DPI}
-	result, err := core.Convert(ctx, core.Input{Path: fs.Arg(0), FileName: filepath.Base(fs.Arg(0))}, core.Options{
-		Provider:           provider,
-		Renderer:           renderer,
-		AdapterKey:         *typeKey,
-		OutputDir:          *outputDir,
-		SaveDebugArtifacts: *debug || inspect,
-		SkipCSV:            inspect,
-		LogWriter:          stderr,
-		Temperature:        config.Provider.Temperature,
+	input := core.Input{}
+	for _, path := range fs.Args() {
+		input.Files = append(input.Files, core.InputFile{Path: path, FileName: filepath.Base(path)})
+	}
+	if len(input.Files) == 1 {
+		input.Path = input.Files[0].Path
+		input.FileName = input.Files[0].FileName
+		input.Files = nil
+	}
+	result, err := core.Convert(ctx, input, core.Options{
+		Provider:        provider,
+		Renderer:        renderer,
+		AdapterKey:      *typeKey,
+		AdapterRegistry: adapters.BuiltinRegistry(),
+		OutputDir:       *outputDir,
+		SkipCSV:         inspect,
+		MaxConcurrency:  config.Conversion.MaxConcurrency,
+		LogWriter:       stderr,
+		Temperature:     config.Provider.Temperature,
 	})
 	if err != nil {
 		var validation core.ValidationError
@@ -93,7 +104,7 @@ func runConvert(ctx context.Context, args []string, stdout, stderr io.Writer, in
 }
 
 func runListTypes(stdout io.Writer) int {
-	for _, adapter := range core.ListAdapters() {
+	for _, adapter := range adapters.BuiltinRegistry().List() {
 		fmt.Fprintf(stdout, "%s\t%s\n", adapter.Key, adapter.Name)
 	}
 	return 0
@@ -138,17 +149,25 @@ func runProviders(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		fmt.Fprintf(stderr, "load config: %v\n", err)
 		return 1
 	}
-	_, err = core.NewProvider(config.Provider)
+	provider, err := providers.New(config.Provider)
 	if err != nil {
 		fmt.Fprintf(stderr, "create provider: %v\n", err)
 		return 1
+	}
+	if pinger, ok := provider.(core.Pinger); ok {
+		if err := pinger.Ping(ctx); err != nil {
+			fmt.Fprintf(stderr, "provider ping failed: %v\n", err)
+			return 1
+		}
+	} else {
+		fmt.Fprintln(stderr, "warning: provider does not support ping; only static config validation performed")
 	}
 	renderer := core.ExternalRenderer{Command: config.Renderer.Command, DPI: config.Renderer.DPI}
 	if err := renderer.Check(ctx); err != nil {
 		fmt.Fprintf(stderr, "renderer: %v\n", err)
 		return 1
 	}
-	fmt.Fprintln(stdout, "provider config and renderer look usable")
+	fmt.Fprintln(stdout, "provider reachable and renderer usable")
 	return 0
 }
 

@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"io"
+
+	"github.com/deb-sig/bill-file-converter/core/adapters"
 )
 
 type Input struct {
@@ -10,18 +12,32 @@ type Input struct {
 	Reader   io.Reader
 	FileName string
 	MIMEType string
+	Files    []InputFile
+}
+
+type InputFile struct {
+	Path     string
+	Reader   io.Reader
+	FileName string
+	MIMEType string
 }
 
 type Options struct {
-	Provider           VLMProvider
-	Renderer           Renderer
-	AdapterKey         string
-	OutputDir          string
-	SaveDebugArtifacts bool
-	SkipCSV            bool
-	LogWriter          io.Writer
-	Temperature        float64
-	TaskID             string
+	Provider        VLMProvider
+	Renderer        Renderer
+	AdapterKey      string
+	OutputDir       string
+	AdapterRegistry AdapterRegistry
+	SkipCSV         bool
+	MaxConcurrency  int
+	LogWriter       io.Writer
+	Temperature     float64
+	taskID          string
+	processLog      *processLogger
+}
+
+type AdapterRegistry interface {
+	MustGet(key string) (adapters.Adapter, error)
 }
 
 type PageImage struct {
@@ -37,6 +53,13 @@ type Document struct {
 }
 
 type SourceInfo struct {
+	Path     string           `json:"path,omitempty"`
+	FileName string           `json:"file_name,omitempty"`
+	MIMEType string           `json:"mime_type,omitempty"`
+	Files    []SourceFileInfo `json:"files,omitempty"`
+}
+
+type SourceFileInfo struct {
 	Path     string `json:"path,omitempty"`
 	FileName string `json:"file_name,omitempty"`
 	MIMEType string `json:"mime_type,omitempty"`
@@ -60,13 +83,12 @@ func (r ValidationReport) HasErrors() bool {
 }
 
 type Artifacts struct {
-	PageImages  []PageImage `json:"page_images,omitempty"`
-	JSONPath    string      `json:"json_path,omitempty"`
-	CSVPath     string      `json:"csv_path,omitempty"`
-	RawPath     string      `json:"raw_path,omitempty"`
-	CSVBytes    []byte      `json:"-"`
-	JSONBytes   []byte      `json:"-"`
-	RawResponse string      `json:"-"`
+	PageImages []PageImage `json:"page_images,omitempty"`
+	JSONPath   string      `json:"json_path,omitempty"`
+	CSVPath    string      `json:"csv_path,omitempty"`
+	LogPath    string      `json:"log_path,omitempty"`
+	CSVBytes   []byte      `json:"-"`
+	JSONBytes  []byte      `json:"-"`
 }
 
 type Result struct {
@@ -94,10 +116,18 @@ type VLMRequest struct {
 }
 
 type VLMResponse struct {
-	Text string
-	Raw  string
+	Text        string
+	Raw         string
+	RawRequest  string
+	RawResponse string
 }
 
 type VLMProvider interface {
 	Generate(ctx context.Context, req VLMRequest) (VLMResponse, error)
+}
+
+// Pinger is implemented by providers that can verify connectivity and credentials
+// without consuming generation tokens.
+type Pinger interface {
+	Ping(ctx context.Context) error
 }

@@ -4,15 +4,18 @@ import (
 	"encoding/json"
 	"os"
 
-	"github.com/deb-sig/bill-file-converter/core"
+	"github.com/deb-sig/bill-file-converter/core/providers"
 )
 
 type Config struct {
-	Provider core.ProviderConfig `json:"provider"`
+	Provider providers.ProviderConfig `json:"provider"`
 	Renderer struct {
 		Command string `json:"command"`
 		DPI     int    `json:"dpi"`
 	} `json:"renderer"`
+	Conversion struct {
+		MaxConcurrency int `json:"max_concurrency"`
+	} `json:"conversion"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -29,16 +32,17 @@ func LoadConfig(path string) (Config, error) {
 
 func DefaultConfig() Config {
 	config := Config{}
-	config.Provider = core.ProviderConfig{
+	config.Provider = providers.ProviderConfig{
 		Provider:        "openai-compatible",
 		BaseURL:         "http://localhost:1234/v1",
 		APIKeyEnv:       "LLM_API_KEY",
-		Model:           "qwen/qwen3.5-vl-9b",
+		Model:           "qwen3-vl-32b-instruct",
 		Temperature:     0,
 		ThinkingEnabled: false,
 	}
 	config.Renderer.Command = "pdftoppm"
 	config.Renderer.DPI = 200
+	config.Conversion.MaxConcurrency = 4
 	return config
 }
 
