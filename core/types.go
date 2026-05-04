@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 
 	"github.com/deb-sig/bill-file-converter/core/adapters"
@@ -23,15 +24,12 @@ type InputFile struct {
 }
 
 type Options struct {
-	Provider        VLMProvider
-	Renderer        Renderer
+	MinerU          MinerUClient
 	AdapterKey      string
 	OutputDir       string
 	AdapterRegistry AdapterRegistry
 	SkipCSV         bool
-	MaxConcurrency  int
 	LogWriter       io.Writer
-	Temperature     float64
 	taskID          string
 	processLog      *processLogger
 	auditWriter     *auditWriter
@@ -39,12 +37,6 @@ type Options struct {
 
 type AdapterRegistry interface {
 	MustGet(key string) (adapters.Adapter, error)
-}
-
-type PageImage struct {
-	Page     int    `json:"page"`
-	Path     string `json:"path"`
-	MIMEType string `json:"mime_type"`
 }
 
 type Document struct {
@@ -84,13 +76,13 @@ func (r ValidationReport) HasErrors() bool {
 }
 
 type Artifacts struct {
-	PageImages []PageImage `json:"page_images,omitempty"`
-	JSONPath   string      `json:"json_path,omitempty"`
-	CSVPath    string      `json:"csv_path,omitempty"`
-	LogPath    string      `json:"log_path,omitempty"`
-	AuditDir   string      `json:"audit_dir,omitempty"`
-	CSVBytes   []byte      `json:"-"`
-	JSONBytes  []byte      `json:"-"`
+	JSONPath        string `json:"json_path,omitempty"`
+	CSVPath         string `json:"csv_path,omitempty"`
+	LogPath         string `json:"log_path,omitempty"`
+	AuditDir        string `json:"audit_dir,omitempty"`
+	ContentListPath string `json:"content_list_path,omitempty"`
+	CSVBytes        []byte `json:"-"`
+	JSONBytes       []byte `json:"-"`
 }
 
 type Result struct {
@@ -105,31 +97,45 @@ type Result struct {
 	Artifacts        Artifacts         `json:"artifacts,omitempty"`
 }
 
-type Renderer interface {
-	Render(ctx context.Context, input Input, outputDir string) ([]PageImage, error)
-	Check(ctx context.Context) error
+type MinerUContent struct {
+	Type      string         `json:"type,omitempty"`
+	Text      string         `json:"text,omitempty"`
+	TableBody string         `json:"table_body,omitempty"`
+	PageIndex *int           `json:"page_idx,omitempty"`
+	Raw       map[string]any `json:"-"`
 }
 
-type VLMRequest struct {
-	Prompt      string
-	Images      []PageImage
-	Temperature float64
-	Extra       map[string]any
+func (c MinerUContent) MarshalJSON() ([]byte, error) {
+	payload := map[string]any{}
+	for key, value := range c.Raw {
+		payload[key] = value
+	}
+	if c.Type != "" {
+		payload["type"] = c.Type
+	}
+	if c.Text != "" {
+		payload["text"] = c.Text
+	}
+	if c.TableBody != "" {
+		payload["table_body"] = c.TableBody
+	}
+	if c.PageIndex != nil {
+		payload["page_idx"] = *c.PageIndex
+	}
+	return json.Marshal(payload)
 }
 
-type VLMResponse struct {
-	Text        string
-	Raw         string
+type MinerUParseResult struct {
+	ContentList []MinerUContent
 	RawRequest  string
 	RawResponse string
 }
 
-type VLMProvider interface {
-	Generate(ctx context.Context, req VLMRequest) (VLMResponse, error)
+type MinerUClient interface {
+	Parse(ctx context.Context, input Input) (MinerUParseResult, error)
 }
 
-// Pinger is implemented by providers that can verify connectivity and credentials
-// without consuming generation tokens.
+// Pinger is implemented by clients that can verify connectivity and credentials.
 type Pinger interface {
 	Ping(ctx context.Context) error
 }

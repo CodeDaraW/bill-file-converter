@@ -6,18 +6,22 @@ import (
 )
 
 type Adapter struct {
-	Key              string
-	Name             string
-	Prompt           string
-	SeedPages        int
-	RequiredMetadata []string
-	ExpectedTables   []TableSpec
+	Key  string
+	Name string
+	// RemoveImages rewrites the input PDF with raster images removed before
+	// parsing. Enable this only for profiles where image overlays such as
+	// watermarks are known to degrade extraction; leave it off otherwise because
+	// PDF rewriting can alter document structure.
+	RemoveImages   bool
+	ExpectedTables []TableSpec
 }
 
 type TableSpec struct {
 	Name           string
 	Headers        []string
 	AllowedHeaders [][]string
+	HeaderAliases  [][]string
+	HeaderStarts   []string
 	MinColumns     int
 }
 
@@ -63,7 +67,7 @@ func (r *Registry) MustGet(key string) (Adapter, error) {
 	}
 	adapter, ok := r.Get(key)
 	if !ok {
-		return Adapter{}, fmt.Errorf("unsupported bill type %q: no prompt/profile is registered", key)
+		return Adapter{}, fmt.Errorf("unsupported bill type %q: no cleaning profile is registered", key)
 	}
 	return adapter, nil
 }

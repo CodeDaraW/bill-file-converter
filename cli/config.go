@@ -1,21 +1,26 @@
 package cli
 
 import (
-	"encoding/json"
+	"fmt"
 	"os"
+	"time"
 
-	"github.com/deb-sig/bill-file-converter/core/providers"
+	"github.com/deb-sig/bill-file-converter/core"
+	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Provider providers.ProviderConfig `json:"provider"`
-	Renderer struct {
-		Command string `json:"command"`
-		DPI     int    `json:"dpi"`
-	} `json:"renderer"`
-	Conversion struct {
-		MaxConcurrency int `json:"max_concurrency"`
-	} `json:"conversion"`
+	MinerU MinerUConfig `yaml:"mineru"`
+}
+
+type MinerUConfig struct {
+	BaseURL     string            `yaml:"base_url"`
+	LangList    []string          `yaml:"lang_list"`
+	Backend     string            `yaml:"backend"`
+	ParseMethod string            `yaml:"parse_method"`
+	Timeout     string            `yaml:"timeout"`
+	MaxRetries  int               `yaml:"max_retries"`
+	Headers     map[string]string `yaml:"headers"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -23,34 +28,64 @@ func LoadConfig(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	var config Config
-	if err := json.Unmarshal(data, &config); err != nil {
+	config := DefaultConfig()
+	if err := yaml.Unmarshal(data, &config); err != nil {
 		return Config{}, err
 	}
 	return config, nil
 }
 
 func DefaultConfig() Config {
-	config := Config{}
-	config.Provider = providers.ProviderConfig{
-		Provider:        "openai-compatible",
-		BaseURL:         "http://localhost:1234/v1",
-		APIKeyEnv:       "LLM_API_KEY",
-		Model:           "qwen3-vl-32b-instruct",
-		Temperature:     0,
-		ThinkingEnabled: false,
+	return Config{
+		MinerU: MinerUConfig{
+			BaseURL:     "http://127.0.0.1:<port>",
+			LangList:    []string{"ch"},
+			Backend:     "hybrid-auto-engine",
+			ParseMethod: "auto",
+			Timeout:     "10m",
+			MaxRetries:  1,
+			Headers:     map[string]string{},
+		},
 	}
-	config.Renderer.Command = "pdftoppm"
-	config.Renderer.DPI = 200
-	config.Conversion.MaxConcurrency = 4
-	return config
+}
+
+func (c Config) MinerUHTTPConfig() (core.MinerUHTTPConfig, error) {
+	timeout := 10 * time.Minute
+	if c.MinerU.Timeout != "" {
+		parsed, err := time.ParseDuration(c.MinerU.Timeout)
+		if err != nil {
+			return core.MinerUHTTPConfig{}, fmt.Errorf("mineru.timeout: %w", err)
+		}
+		timeout = parsed
+	}
+	langList := c.MinerU.LangList
+	if len(langList) == 0 {
+		langList = []string{"ch"}
+	}
+	backend := c.MinerU.Backend
+	if backend == "" {
+		backend = "hybrid-auto-engine"
+	}
+	parseMethod := c.MinerU.ParseMethod
+	if parseMethod == "" {
+		parseMethod = "auto"
+	}
+	return core.MinerUHTTPConfig{
+		BaseURL:     c.MinerU.BaseURL,
+		LangList:    langList,
+		Backend:     backend,
+		ParseMethod: parseMethod,
+		Timeout:     timeout,
+		MaxRetries:  c.MinerU.MaxRetries,
+		Headers:     c.MinerU.Headers,
+	}, nil
 }
 
 func WriteDefaultConfig(path string) error {
 	config := DefaultConfig()
-	data, err := json.MarshalIndent(config, "", "  ")
+	data, err := yaml.Marshal(config)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	return os.WriteFile(path, data, 0o644)
 }

@@ -12,12 +12,6 @@ func ValidateDocument(doc Document, adapter adapters.Adapter) ValidationReport {
 		report.Errors = append(report.Errors, "no tables were extracted")
 	}
 
-	for _, key := range adapter.RequiredMetadata {
-		if doc.Metadata == nil || doc.Metadata[key] == "" {
-			report.Errors = append(report.Errors, fmt.Sprintf("missing required metadata %q", key))
-		}
-	}
-
 	for tableIdx, table := range doc.Tables {
 		if len(table.Headers) == 0 {
 			report.Errors = append(report.Errors, fmt.Sprintf("table %d has no headers", tableIdx+1))

@@ -8,10 +8,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/deb-sig/bill-file-converter/core"
 	"github.com/deb-sig/bill-file-converter/core/adapters"
-	"github.com/deb-sig/bill-file-converter/core/providers"
 )
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -28,8 +30,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runListTypes(stdout)
 	case "config":
 		return runConfig(args[1:], stdout, stderr)
-	case "providers":
-		return runProviders(ctx, args[1:], stdout, stderr)
+	case "mineru":
+		return runMinerU(ctx, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		printUsage(stderr)
@@ -41,18 +43,18 @@ func runConvert(ctx context.Context, args []string, stdout, stderr io.Writer, in
 	fs := flag.NewFlagSet("convert", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	typeKey := fs.String("type", "", "bill type adapter key")
-	configPath := fs.String("config", "config.json", "config file path")
-	outputDir := fs.String("out", "output", "output directory")
+	configPath := fs.String("config", "config.yaml", "config file path")
+	outputDir := fs.String("output", "output", "output directory")
 	args = normalizeFlagArgs(args, map[string]bool{
 		"-type": true, "--type": true,
 		"-config": true, "--config": true,
-		"-out": true, "--out": true,
+		"-output": true, "--output": true,
 	})
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() < 1 {
-		fmt.Fprintln(stderr, "expected at least one PDF file")
+		fmt.Fprintln(stderr, "expected at least one PDF file or directory")
 		return 2
 	}
 	config, err := LoadConfig(*configPath)
@@ -60,14 +62,23 @@ func runConvert(ctx context.Context, args []string, stdout, stderr io.Writer, in
 		fmt.Fprintf(stderr, "load config: %v\n", err)
 		return 1
 	}
-	provider, err := providers.New(config.Provider)
+	minerUConfig, err := config.MinerUHTTPConfig()
 	if err != nil {
-		fmt.Fprintf(stderr, "create provider: %v\n", err)
+		fmt.Fprintf(stderr, "load config: %v\n", err)
 		return 1
 	}
-	renderer := core.ExternalRenderer{Command: config.Renderer.Command, DPI: config.Renderer.DPI}
+	minerU, err := core.NewMinerUHTTPClient(minerUConfig)
+	if err != nil {
+		fmt.Fprintf(stderr, "create MinerU client: %v\n", err)
+		return 1
+	}
+	inputFiles, err := expandInputPaths(fs.Args())
+	if err != nil {
+		fmt.Fprintf(stderr, "input: %v\n", err)
+		return 1
+	}
 	input := core.Input{}
-	for _, path := range fs.Args() {
+	for _, path := range inputFiles {
 		input.Files = append(input.Files, core.InputFile{Path: path, FileName: filepath.Base(path)})
 	}
 	if len(input.Files) == 1 {
@@ -76,15 +87,12 @@ func runConvert(ctx context.Context, args []string, stdout, stderr io.Writer, in
 		input.Files = nil
 	}
 	result, err := core.Convert(ctx, input, core.Options{
-		Provider:        provider,
-		Renderer:        renderer,
+		MinerU:          minerU,
 		AdapterKey:      *typeKey,
 		AdapterRegistry: adapters.BuiltinRegistry(),
 		OutputDir:       *outputDir,
 		SkipCSV:         inspect,
-		MaxConcurrency:  config.Conversion.MaxConcurrency,
 		LogWriter:       stderr,
-		Temperature:     config.Provider.Temperature,
 	})
 	if err != nil {
 		var validation core.ValidationError
@@ -103,6 +111,82 @@ func runConvert(ctx context.Context, args []string, stdout, stderr io.Writer, in
 	return 0
 }
 
+func expandInputPaths(paths []string) ([]string, error) {
+	var expanded []string
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, err
+		}
+		if !info.IsDir() {
+			if strings.ToLower(filepath.Ext(path)) != ".pdf" {
+				return nil, fmt.Errorf("unsupported input file %q: only PDF input is supported", path)
+			}
+			expanded = append(expanded, path)
+			continue
+		}
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return nil, err
+		}
+		pdfs := []string{}
+		for _, entry := range entries {
+			if entry.IsDir() || strings.ToLower(filepath.Ext(entry.Name())) != ".pdf" {
+				continue
+			}
+			pdfs = append(pdfs, filepath.Join(path, entry.Name()))
+		}
+		sort.Slice(pdfs, func(i, j int) bool {
+			return naturalLess(filepath.Base(pdfs[i]), filepath.Base(pdfs[j]))
+		})
+		if len(pdfs) == 0 {
+			return nil, fmt.Errorf("directory %q contains no PDF files", path)
+		}
+		expanded = append(expanded, pdfs...)
+	}
+	return expanded, nil
+}
+
+func naturalLess(a, b string) bool {
+	ai, bi := 0, 0
+	for ai < len(a) && bi < len(b) {
+		ar, br := a[ai], b[bi]
+		if isDigit(ar) && isDigit(br) {
+			an, nextA := readNumber(a, ai)
+			bn, nextB := readNumber(b, bi)
+			if an != bn {
+				return an < bn
+			}
+			ai, bi = nextA, nextB
+			continue
+		}
+		al := strings.ToLower(string(ar))
+		bl := strings.ToLower(string(br))
+		if al != bl {
+			return al < bl
+		}
+		ai++
+		bi++
+	}
+	return len(a) < len(b)
+}
+
+func isDigit(ch byte) bool {
+	return ch >= '0' && ch <= '9'
+}
+
+func readNumber(value string, start int) (int, int) {
+	end := start
+	for end < len(value) && isDigit(value[end]) {
+		end++
+	}
+	parsed, err := strconv.Atoi(value[start:end])
+	if err != nil {
+		return 0, end
+	}
+	return parsed, end
+}
+
 func runListTypes(stdout io.Writer) int {
 	for _, adapter := range adapters.BuiltinRegistry().List() {
 		fmt.Fprintf(stdout, "%s\t%s\n", adapter.Key, adapter.Name)
@@ -112,12 +196,12 @@ func runListTypes(stdout io.Writer) int {
 
 func runConfig(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || args[0] != "init" {
-		fmt.Fprintln(stderr, "usage: config init [-out config.json]")
+		fmt.Fprintln(stderr, "usage: config init [-output config.yaml]")
 		return 2
 	}
 	fs := flag.NewFlagSet("config init", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	out := fs.String("out", "config.json", "config output path")
+	out := fs.String("output", "config.yaml", "config output path")
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2
 	}
@@ -133,14 +217,14 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runProviders(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+func runMinerU(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || args[0] != "test" {
-		fmt.Fprintln(stderr, "usage: providers test [-config config.json]")
+		fmt.Fprintln(stderr, "usage: mineru test [-config config.yaml]")
 		return 2
 	}
-	fs := flag.NewFlagSet("providers test", flag.ContinueOnError)
+	fs := flag.NewFlagSet("mineru test", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	configPath := fs.String("config", "config.json", "config file path")
+	configPath := fs.String("config", "config.yaml", "config file path")
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2
 	}
@@ -149,30 +233,26 @@ func runProviders(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		fmt.Fprintf(stderr, "load config: %v\n", err)
 		return 1
 	}
-	provider, err := providers.New(config.Provider)
+	minerUConfig, err := config.MinerUHTTPConfig()
 	if err != nil {
-		fmt.Fprintf(stderr, "create provider: %v\n", err)
+		fmt.Fprintf(stderr, "load config: %v\n", err)
 		return 1
 	}
-	if pinger, ok := provider.(core.Pinger); ok {
-		if err := pinger.Ping(ctx); err != nil {
-			fmt.Fprintf(stderr, "provider ping failed: %v\n", err)
-			return 1
-		}
-	} else {
-		fmt.Fprintln(stderr, "warning: provider does not support ping; only static config validation performed")
-	}
-	renderer := core.ExternalRenderer{Command: config.Renderer.Command, DPI: config.Renderer.DPI}
-	if err := renderer.Check(ctx); err != nil {
-		fmt.Fprintf(stderr, "renderer: %v\n", err)
+	minerU, err := core.NewMinerUHTTPClient(minerUConfig)
+	if err != nil {
+		fmt.Fprintf(stderr, "create MinerU client: %v\n", err)
 		return 1
 	}
-	fmt.Fprintln(stdout, "provider reachable and renderer usable")
+	if err := minerU.Ping(ctx); err != nil {
+		fmt.Fprintf(stderr, "MinerU ping failed: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, "MinerU reachable")
 	return 0
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "usage: bill-file-converter <convert|inspect|list-types|config|providers> [options]")
+	fmt.Fprintln(w, "usage: bill-file-converter <convert|inspect|list-types|config|mineru> [options]")
 }
 
 func normalizeFlagArgs(args []string, flagsWithValue map[string]bool) []string {
