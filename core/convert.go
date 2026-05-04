@@ -242,7 +242,7 @@ func matchingHeaderRow(rows [][]string, adapter adapters.Adapter) (int, []string
 	for rowIndex, row := range rows {
 		normalized := normalizeStringRow(row)
 		for _, headers := range allowed {
-			if equalStringSlices(normalized, headers) {
+			if equalStringSlices(normalized, headers) || equalHeaderSlices(normalized, headers) {
 				return rowIndex, append([]string(nil), headers...)
 			}
 		}
@@ -270,14 +270,15 @@ func normalizeRowWidth(row []string, width int) []string {
 }
 
 func stringRowMatchesHeaders(row []string, headers []string) bool {
-	return equalStringSlices(normalizeStringRow(row), headers)
+	normalized := normalizeStringRow(row)
+	return equalStringSlices(normalized, headers) || equalHeaderSlices(normalized, headers)
 }
 
 func rowMatchesHeaderAlias(row []string, adapter adapters.Adapter) bool {
 	normalized := normalizeStringRow(row)
 	for _, spec := range adapter.ExpectedTables {
 		for _, alias := range spec.HeaderAliases {
-			if equalStringSlices(normalized, alias) || rowMatchesHeaderAliasPrefix(normalized, alias) {
+			if equalStringSlices(normalized, alias) || equalHeaderSlices(normalized, alias) || rowMatchesHeaderAliasPrefix(normalized, alias) {
 				return true
 			}
 		}
@@ -364,6 +365,22 @@ func equalStringSlices(a []string, b []string) bool {
 		}
 	}
 	return true
+}
+
+func equalHeaderSlices(a []string, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if normalizeHeaderText(a[i]) != normalizeHeaderText(b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeHeaderText(value string) string {
+	return strings.ReplaceAll(normalizeText(value), " ", "")
 }
 
 func appendUniqueInts(base []int, values ...int) []int {

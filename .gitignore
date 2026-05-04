@@ -34,4 +34,4 @@ desensitize
 /bill-file-converter
 output
 output-*
-config.json
+config.yaml

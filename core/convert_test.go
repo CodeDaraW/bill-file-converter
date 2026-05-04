@@ -106,12 +106,12 @@ func TestConvertMultiplePDFs(t *testing.T) {
 	minerU := &fakeMinerU{result: MinerUParseResult{
 		ContentList: []MinerUContent{
 			{Type: "table", TableBody: `<table>
-				<tr><th>交易日期</th><th>交易时间</th><th>交易摘要</th><th>交易金额</th><th>本次余额</th><th>对手信息</th><th>日志号</th><th>交易渠道</th><th>交易附言</th></tr>
+				<tr><th>交易日期</th><th>交易时间</th><th>交易摘要</th><th>交易金额</th><th>本次余额</th><th>对手信息</th><th>日 志 号</th><th>交易渠道</th><th>交易附言</th></tr>
 				<tr><td>2026-01-01</td><td>12:00:00</td><td>转账</td><td>1.00</td><td>2.00</td><td>--</td><td>1234567890</td><td>网银</td><td></td></tr>
 			</table>`},
 		},
 	}}
-	_, err := Convert(context.Background(), Input{Files: []InputFile{
+	result, err := Convert(context.Background(), Input{Files: []InputFile{
 		{Path: first, FileName: "1.pdf"},
 		{Path: second, FileName: "2.pdf"},
 	}}, Options{
@@ -125,6 +125,9 @@ func TestConvertMultiplePDFs(t *testing.T) {
 	}
 	if len(minerU.input.Files) != 2 {
 		t.Fatalf("expected two input files, got %#v", minerU.input)
+	}
+	if got := result.Tables[0].Headers[6]; got != "日志号" {
+		t.Fatalf("expected header spaces to be stripped via profile headers, got %q", got)
 	}
 }
 

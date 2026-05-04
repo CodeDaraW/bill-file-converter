@@ -34,6 +34,9 @@ func abcDebitAdapter() Adapter {
 	return Adapter{
 		Key:  "abc_debit",
 		Name: "中国农业银行借记卡",
+		// ABC debit statements can contain image overlays/stamps that interfere
+		// with table extraction, so strip raster images before parsing.
+		RemoveImages: true,
 		ExpectedTables: []TableSpec{
 			{
 				AllowedHeaders: [][]string{headers},
