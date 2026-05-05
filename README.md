@@ -102,21 +102,20 @@ output/<task_id>/
 ├── result/
 │   ├── result.json
 │   └── result.csv
-└── intermediate/
+└── logger/
     ├── bill_file_converter.log
     ├── content_list.json
-    └── audit/
-        ├── mineru_request.json
-        ├── mineru_response.json
-        └── failure.json   # 仅在失败时
+    ├── mineru_request.json
+    ├── mineru_response.json
+    └── failure.json   # 仅在失败时
 ```
 
 - `result/result.json`：源文件信息、本地时区生成时间、metadata、表格、校验报告和 artifact 路径。
 - `result/result.csv`：严格表格 CSV，只包含表头和数据行。
-- `intermediate/content_list.json`：MinerU 内容列表，是清洗和排查问题的主要输入。
-- `intermediate/bill_file_converter.log`：带时间戳、task id 和日志级别的阶段事件。
-- `intermediate/audit/mineru_request.json` / `mineru_response.json`：MinerU 原始请求摘要和响应体。
-- `intermediate/audit/failure.json`：失败时写入，包含 source、adapter、task id、时间戳和错误信息。
+- `logger/bill_file_converter.log`：带时间戳、task id 和日志级别的阶段事件。
+- `logger/content_list.json`：MinerU 内容列表，是清洗和排查问题的主要输入。
+- `logger/mineru_request.json` / `mineru_response.json`：MinerU 原始请求摘要和响应体。长 JSON 单独存放，避免写入行日志后导致编辑器卡顿。
+- `logger/failure.json`：失败时写入，包含 source、adapter、task id、时间戳和错误信息。
 
 ## 清洗规则
 

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/deb-sig/bill-file-converter/core/adapters"
+	tasklogger "github.com/deb-sig/bill-file-converter/core/logger"
 )
 
 type fakeMinerU struct {
@@ -77,9 +78,9 @@ func TestConvertUsesMinerUContentListAndWritesArtifacts(t *testing.T) {
 		result.Artifacts.JSONPath,
 		result.Artifacts.CSVPath,
 		result.Artifacts.ContentListPath,
-		filepath.Join(filepath.Dir(result.Artifacts.AuditDir), "bill_file_converter.log"),
-		filepath.Join(result.Artifacts.AuditDir, "mineru_request.json"),
-		filepath.Join(result.Artifacts.AuditDir, "mineru_response.json"),
+		result.Artifacts.ProcessLogPath,
+		filepath.Join(result.Artifacts.LoggerDir, "mineru_request.json"),
+		filepath.Join(result.Artifacts.LoggerDir, "mineru_response.json"),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected artifact %s: %v", path, err)
@@ -263,13 +264,13 @@ func TestParseHTMLTableSpans(t *testing.T) {
 }
 
 func TestColorizeStdLogLine(t *testing.T) {
-	if got := colorizeStdLogLine(LogWarning, "warn"); got != "\033[33mwarn\033[0m" {
+	if got := tasklogger.ColorizeLine(tasklogger.Warning, "warn"); got != "\033[33mwarn\033[0m" {
 		t.Fatalf("warning color = %q", got)
 	}
-	if got := colorizeStdLogLine(LogError, "err"); got != "\033[31merr\033[0m" {
+	if got := tasklogger.ColorizeLine(tasklogger.Error, "err"); got != "\033[31merr\033[0m" {
 		t.Fatalf("error color = %q", got)
 	}
-	if got := colorizeStdLogLine(LogInfo, "info"); got != "info" {
+	if got := tasklogger.ColorizeLine(tasklogger.Info, "info"); got != "info" {
 		t.Fatalf("info color = %q", got)
 	}
 }

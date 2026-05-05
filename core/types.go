@@ -31,8 +31,6 @@ type Options struct {
 	SkipCSV         bool
 	LogWriter       io.Writer
 	taskID          string
-	processLog      *processLogger
-	auditWriter     *auditWriter
 }
 
 type AdapterRegistry interface {
@@ -75,13 +73,16 @@ func (r ValidationReport) HasErrors() bool {
 }
 
 type Artifacts struct {
-	JSONPath        string `json:"json_path,omitempty"`
-	CSVPath         string `json:"csv_path,omitempty"`
-	LogPath         string `json:"log_path,omitempty"`
-	AuditDir        string `json:"audit_dir,omitempty"`
-	ContentListPath string `json:"content_list_path,omitempty"`
-	CSVBytes        []byte `json:"-"`
-	JSONBytes       []byte `json:"-"`
+	JSONPath              string `json:"json_path,omitempty"`
+	CSVPath               string `json:"csv_path,omitempty"`
+	LoggerDir             string `json:"logger_dir,omitempty"`
+	ProcessLogPath        string `json:"process_log_path,omitempty"`
+	ContentListPath       string `json:"content_list_path,omitempty"`
+	MinerURawRequestPath  string `json:"mineru_raw_request_path,omitempty"`
+	MinerURawResponsePath string `json:"mineru_raw_response_path,omitempty"`
+	FailurePath           string `json:"failure_path,omitempty"`
+	CSVBytes              []byte `json:"-"`
+	JSONBytes             []byte `json:"-"`
 }
 
 type Result struct {

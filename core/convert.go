@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/deb-sig/bill-file-converter/core/adapters"
+	tasklogger "github.com/deb-sig/bill-file-converter/core/logger"
 )
 
 func Convert(ctx context.Context, input Input, options Options) (Result, error) {
@@ -29,94 +30,85 @@ func Convert(ctx context.Context, input Input, options Options) (Result, error) 
 	}
 	options.OutputDir = filepath.Join(baseOutputDir, options.taskID)
 	resultDir := filepath.Join(options.OutputDir, "result")
-	intermediateDir := filepath.Join(options.OutputDir, "intermediate")
-	auditDir := filepath.Join(intermediateDir, "audit")
-	for _, dir := range []string{resultDir, intermediateDir} {
+	for _, dir := range []string{resultDir, options.OutputDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return Result{}, err
 		}
 	}
-	auditWriter, err := newAuditWriter(auditDir)
+	runLogger, err := tasklogger.NewTaskLogger(options.OutputDir, options.taskID, options.AdapterKey, options.LogWriter)
 	if err != nil {
 		return Result{}, err
 	}
-	options.auditWriter = auditWriter
-	processLog, err := newProcessLogger(filepath.Join(intermediateDir, "bill_file_converter.log"), options.taskID)
-	if err != nil {
-		return Result{}, err
-	}
-	defer processLog.Close()
-	options.processLog = processLog
-
-	logInfof(options, "checking input")
+	defer runLogger.Close()
+	runLogger.Infof("checking input")
 	if err := validatePDFInput(input); err != nil {
-		logErrorf(options, "input validation failed: %s", err)
-		logFailure(options, input, "", err)
+		runLogger.Errorf("input validation failed: %s", err)
+		runLogger.SaveFailure(sourceInfo(input), "", err)
 		return Result{}, err
 	}
 	registry := options.AdapterRegistry
 	if registry == nil {
 		err := fmt.Errorf("missing adapter registry")
-		logErrorf(options, "adapter registry missing")
-		logFailure(options, input, "", err)
+		runLogger.Errorf("adapter registry missing")
+		runLogger.SaveFailure(sourceInfo(input), "", err)
 		return Result{}, err
 	}
 	adapter, err := registry.MustGet(options.AdapterKey)
 	if err != nil {
-		logErrorf(options, "adapter lookup failed: %s", err)
-		logFailure(options, input, "", err)
+		runLogger.Errorf("adapter lookup failed: %s", err)
+		runLogger.SaveFailure(sourceInfo(input), "", err)
 		return Result{}, err
 	}
-	logInfof(options, "using adapter %s (%s)", adapter.Key, adapter.Name)
+	runLogger.Infof("using adapter %s (%s)", adapter.Key, adapter.Name)
 	if options.MinerU == nil {
 		err := fmt.Errorf("missing MinerU client")
-		logErrorf(options, "MinerU client missing")
-		logFailure(options, input, adapter.Name, err)
+		runLogger.Errorf("MinerU client missing")
+		runLogger.SaveFailure(sourceInfo(input), adapter.Name, err)
 		return Result{}, err
 	}
 
 	parseInput := input
 	if adapter.RemoveImages {
-		logInfof(options, "removing images from PDF input(s) before MinerU parsing")
+		runLogger.Infof("removing images from PDF input(s) before MinerU parsing")
 		var preprocessErr error
-		parseInput, preprocessErr = removeInputPDFImages(ctx, input, filepath.Join(intermediateDir, "preprocessed"), options)
+		parseInput, preprocessErr = removeInputPDFImages(ctx, input, filepath.Join(runLogger.Dir(), "preprocessed"), runLogger)
 		if preprocessErr != nil {
-			logErrorf(options, "PDF image removal failed: %s", preprocessErr)
-			logFailure(options, input, adapter.Name, preprocessErr)
+			runLogger.Errorf("PDF image removal failed: %s", preprocessErr)
+			runLogger.SaveFailure(sourceInfo(input), adapter.Name, preprocessErr)
 			return Result{}, preprocessErr
 		}
 	}
 
-	logInfof(options, "submitting %d PDF input(s) to MinerU", len(inputFiles(parseInput)))
+	runLogger.Infof("submitting %d PDF input(s) to MinerU", len(inputFiles(parseInput)))
 	parseResult, err := parseMinerUInInputOrder(ctx, options.MinerU, parseInput)
-	logMinerUAudit(options, parseResult)
+	rawRequestPath, rawResponsePath := runLogger.SaveRawPayloads(parseResult.RawRequest, parseResult.RawResponse)
 	if err != nil {
-		logErrorf(options, "MinerU parse failed: %s", err)
-		logFailure(options, input, adapter.Name, err)
+		runLogger.Errorf("MinerU parse failed: %s", err)
+		runLogger.SaveFailure(sourceInfo(input), adapter.Name, err)
 		return Result{}, err
 	}
-	contentListPath := filepath.Join(intermediateDir, "content_list.json")
+	contentListPath := filepath.Join(runLogger.Dir(), "content_list.json")
 	if err := writeContentList(contentListPath, parseResult.ContentList); err != nil {
-		logErrorf(options, "writing content_list.json failed: %s", err)
-		logFailure(options, input, adapter.Name, err)
+		runLogger.Errorf("writing content_list.json failed: %s", err)
+		runLogger.SaveFailure(sourceInfo(input), adapter.Name, err)
 		return Result{}, err
 	}
 
-	logInfof(options, "cleaning MinerU content list")
+	runLogger.Infof("cleaning MinerU content list")
 	doc := DocumentFromMinerUContent(parseResult.ContentList, adapter)
-	logInfof(options, "validating extracted document")
+	runLogger.Infof("validating extracted document")
 	report := ValidateDocument(doc, adapter)
 	var csvBytes []byte
 	if !options.SkipCSV {
-		logInfof(options, "exporting CSV")
+		runLogger.Infof("exporting CSV")
 		var csvErr error
 		csvBytes, csvErr = ExportCSV(doc)
 		if csvErr != nil {
 			report.Errors = append(report.Errors, csvErr.Error())
-			logErrorf(options, "CSV export failed: %s", csvErr)
+			runLogger.Errorf("CSV export failed: %s", csvErr)
 		}
 	} else {
-		logInfof(options, "skipping CSV export")
+		runLogger.Infof("skipping CSV export")
 	}
 
 	result := Result{
@@ -129,28 +121,30 @@ func Convert(ctx context.Context, input Input, options Options) (Result, error) 
 		Tables:           doc.Tables,
 		ValidationReport: report,
 		Artifacts: Artifacts{
-			CSVBytes:        csvBytes,
-			LogPath:         filepath.Join(intermediateDir, "bill_file_converter.log"),
-			AuditDir:        auditDir,
-			ContentListPath: contentListPath,
+			CSVBytes:              csvBytes,
+			LoggerDir:             runLogger.Dir(),
+			ProcessLogPath:        runLogger.Path(),
+			ContentListPath:       contentListPath,
+			MinerURawRequestPath:  rawRequestPath,
+			MinerURawResponsePath: rawResponsePath,
 		},
 	}
 
-	logInfof(options, "writing artifacts to %s", options.OutputDir)
+	runLogger.Infof("writing artifacts to %s", options.OutputDir)
 	if err := writeArtifacts(resultDir, &result); err != nil {
-		logErrorf(options, "writing result artifacts failed: %s", err)
-		logFailure(options, input, adapter.Name, err)
+		runLogger.Errorf("writing result artifacts failed: %s", err)
+		result.Artifacts.FailurePath = runLogger.SaveFailure(sourceInfo(input), adapter.Name, err)
 		return Result{}, err
 	}
 	if report.HasErrors() {
-		logErrorf(options, "validation failed with %d error(s)", len(report.Errors))
+		runLogger.Errorf("validation failed with %d error(s)", len(report.Errors))
 		for _, validationErr := range report.Errors {
-			logErrorf(options, "validation error: %s", validationErr)
+			runLogger.Errorf("validation error: %s", validationErr)
 		}
-		logFailure(options, input, adapter.Name, ValidationError{Report: report})
+		result.Artifacts.FailurePath = runLogger.SaveFailure(sourceInfo(input), adapter.Name, ValidationError{Report: report})
 		return result, ValidationError{Report: report}
 	}
-	logInfof(options, "done")
+	runLogger.Infof("done")
 	return result, nil
 }
 
@@ -518,7 +512,7 @@ func inputFiles(input Input) []InputFile {
 	}}
 }
 
-func removeInputPDFImages(ctx context.Context, input Input, outputDir string, options Options) (Input, error) {
+func removeInputPDFImages(ctx context.Context, input Input, outputDir string, runLogger *tasklogger.Logger) (Input, error) {
 	files := inputFiles(input)
 	if len(files) == 0 {
 		return Input{}, fmt.Errorf("missing input PDF")
@@ -532,7 +526,7 @@ func removeInputPDFImages(ctx context.Context, input Input, outputDir string, op
 		if err := removePDFImages(ctx, file, outPath); err != nil {
 			return Input{}, fmt.Errorf("remove images from input %d (%s): %w", index+1, inputFileName(file), err)
 		}
-		logVerbosef(options, "wrote image-free PDF for %s to %s", inputFileName(file), outPath)
+		runLogger.Verbosef("wrote image-free PDF for %s to %s", inputFileName(file), outPath)
 		processed = append(processed, InputFile{
 			Path:     outPath,
 			FileName: inputFileName(file),
@@ -694,69 +688,6 @@ func writeArtifacts(resultDir string, result *Result) error {
 	}
 
 	return nil
-}
-
-func logMinerUAudit(options Options, result MinerUParseResult) {
-	if options.auditWriter == nil {
-		return
-	}
-	if result.RawRequest != "" {
-		path, err := options.auditWriter.writeRaw("mineru_request.json", result.RawRequest)
-		if err != nil {
-			logErrorf(options, "failed to persist MinerU request: %s", err)
-		} else if path != "" {
-			logVerbosef(options, "wrote MinerU raw request to %s", path)
-		}
-	}
-	if result.RawResponse != "" {
-		path, err := options.auditWriter.writeRaw("mineru_response.json", result.RawResponse)
-		if err != nil {
-			logErrorf(options, "failed to persist MinerU response: %s", err)
-		} else if path != "" {
-			logVerbosef(options, "wrote MinerU raw response to %s", path)
-		}
-	}
-}
-
-func logVerbosef(options Options, format string, args ...any) {
-	logWithLevel(options, LogVerbose, format, args...)
-}
-
-func logInfof(options Options, format string, args ...any) {
-	logWithLevel(options, LogInfo, format, args...)
-}
-
-func logWarningf(options Options, format string, args ...any) {
-	logWithLevel(options, LogWarning, format, args...)
-}
-
-func logErrorf(options Options, format string, args ...any) {
-	logWithLevel(options, LogError, format, args...)
-}
-
-func logWithLevel(options Options, level LogLevel, format string, args ...any) {
-	message := fmt.Sprintf(format, args...)
-	line := fmt.Sprintf("%s [%s] [%s] %s", time.Now().Format(time.RFC3339), strings.ToUpper(string(normalizeLogLevel(level))), options.taskID, message)
-	if options.processLog != nil {
-		if written := options.processLog.Write(level, message); written != "" {
-			line = written
-		}
-	}
-	if options.LogWriter == nil {
-		return
-	}
-	_, _ = fmt.Fprintf(options.LogWriter, "%s\n", colorizeStdLogLine(level, line))
-}
-
-func colorizeStdLogLine(level LogLevel, line string) string {
-	switch normalizeLogLevel(level) {
-	case LogWarning:
-		return "\033[33m" + line + "\033[0m"
-	case LogError:
-		return "\033[31m" + line + "\033[0m"
-	default:
-		return line
-	}
 }
 
 func newTaskID(t time.Time) (string, error) {
