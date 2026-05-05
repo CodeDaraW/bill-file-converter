@@ -6,57 +6,60 @@ import (
 )
 
 type Adapter struct {
-	Key  string
+	// Key is the stable CLI --type value and must be unique.
+	Key string
+	// Name is the human-readable bill type shown in logs and list-types.
 	Name string
+	// Headers is the canonical transaction table header exported to result files.
+	// VLM output must match either Headers or one HeaderAliases entry.
+	Headers []string
+	// HeaderAliases lists accepted VLM header variants. When an alias is
+	// matched, the exported header is still Headers.
+	HeaderAliases [][]string
+	// RowGuards identify real data rows after the header. They are intentionally
+	// structural checks, usually on a date column, not business-rule cleanup.
+	RowGuards []RowGuard
 	// RemoveImages rewrites the input PDF with raster images removed before
 	// parsing. Enable this only for profiles where image overlays such as
 	// watermarks are known to degrade extraction; leave it off otherwise because
 	// PDF rewriting can alter document structure.
-	RemoveImages   bool
-	RowGuards      []RowGuard
-	ExpectedTables []TableSpec
+	RemoveImages bool
 }
 
 type RowGuard struct {
+	// Column is zero-based in the canonical table.
 	Column int
-	Format string
+	// Format is one of the RowGuardFormat* constants below.
+	Format RowGuardFormat
 }
 
-type TableSpec struct {
-	Name           string
-	Headers        []string
-	AllowedHeaders [][]string
-	HeaderAliases  [][]string
-	HeaderStarts   []string
-	MinColumns     int
-}
+type RowGuardFormat string
 
-type Registry struct {
+const (
+	RowGuardFormatYYYYMMDD         RowGuardFormat = "YYYYMMDD"
+	RowGuardFormatYYYYMMDDHHMMSS   RowGuardFormat = "YYYYMMDDHH:mm:ss"
+	RowGuardFormatYYYYDashMMDashDD RowGuardFormat = "YYYY-MM-DD"
+	RowGuardFormatMMSlashDD        RowGuardFormat = "MM/DD"
+)
+
+type registry struct {
 	adapters map[string]Adapter
 }
 
-func NewRegistry(items ...Adapter) *Registry {
-	registry := &Registry{adapters: map[string]Adapter{}}
-	for _, item := range items {
-		registry.Register(item)
+func BuiltinRegistry() *registry {
+	adapters := map[string]Adapter{}
+	for _, adapter := range []Adapter{
+		abcDebitAdapter(),
+		cmbCreditAdapter(),
+		cmbDebitAdapter(),
+		zbankDebitAdapter(),
+	} {
+		adapters[adapter.Key] = adapter
 	}
-	return registry
+	return &registry{adapters: adapters}
 }
 
-func BuiltinRegistry() *Registry {
-	return NewRegistry(builtinAdapters()...)
-}
-
-func (r *Registry) Register(adapter Adapter) {
-	r.adapters[adapter.Key] = adapter
-}
-
-func (r *Registry) Get(key string) (Adapter, bool) {
-	adapter, ok := r.adapters[key]
-	return adapter, ok
-}
-
-func (r *Registry) List() []Adapter {
+func (r *registry) List() []Adapter {
 	list := make([]Adapter, 0, len(r.adapters))
 	for _, adapter := range r.adapters {
 		list = append(list, adapter)
@@ -67,11 +70,11 @@ func (r *Registry) List() []Adapter {
 	return list
 }
 
-func (r *Registry) MustGet(key string) (Adapter, error) {
+func (r *registry) MustGet(key string) (Adapter, error) {
 	if key == "" {
 		return Adapter{}, fmt.Errorf("missing bill type: pass --type <adapter_key>; run list-types to see supported types")
 	}
-	adapter, ok := r.Get(key)
+	adapter, ok := r.adapters[key]
 	if !ok {
 		return Adapter{}, fmt.Errorf("unsupported bill type %q: no cleaning profile is registered", key)
 	}

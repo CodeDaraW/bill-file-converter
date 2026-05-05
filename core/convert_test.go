@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,14 +44,14 @@ func TestConvertUsesMinerUContentListAndWritesArtifacts(t *testing.T) {
 			{Type: "text", Text: " 招商银行交易流水 \n 招商银行交易流水 "},
 			{Type: "text", Text: "招商银行交易流水"},
 			{Type: "table", PageIndex: &page, TableBody: `<table>
-				<tr><th>记账日期</th><th>货币</th><th>交易金额</th><th>联机余额</th><th>交易摘要</th><th>对手信息</th></tr>
-				<tr><td>Date</td><td>Currency</td><td>Transaction Amount</td><td>Balance</td><td>Transaction Type</td><td>Counter Party</td></tr>
-				<tr><td>2026-01-01</td><td>CNY</td><td>1.00</td><td>9.00</td><td>消费</td><td></td></tr>
-				<tr><td>记账日期</td><td>货币</td><td>交易金额</td><td>联机余额</td><td>交易摘要</td><td>对手信息</td></tr>
-				<tr><td>Date</td><td>Currency</td><td>Transaction Amount</td><td>Balance</td><td>Transaction Type</td><td>Counter Party</td></tr>
-				<tr><td>Date</td><td>Currency</td><td>Transaction Amount</td><td>Balance</td><td>Transaction Ty</td><td></td></tr>
-				<tr><td>Date</td><td>Currency</td><td>Transaction Amount</td><td>Balance</td><td>Transaction Type</td><td>招商银行股份有限公司</td></tr>
-				<tr><td>2026-01-02</td><td>CNY</td><td>-2.00</td><td>7.00</td><td>退款</td><td>张三</td></tr>
+				<tr><th>记账日期</th><th>货币</th><th>交易金额</th><th>联机余额</th><th>交易摘要</th><th>对手信息</th><th>客户摘要</th></tr>
+				<tr><td>Date</td><td>Currency</td><td>Transaction Amount</td><td>Balance</td><td>Transaction Type</td><td>Counter Party</td><td>Customer Summary</td></tr>
+				<tr><td>2026-01-01</td><td>CNY</td><td>1.00</td><td>9.00</td><td>消费</td><td></td><td>买菜</td></tr>
+				<tr><td>记账日期</td><td>货币</td><td>交易金额</td><td>联机余额</td><td>交易摘要</td><td>对手信息</td><td>客户摘要</td></tr>
+				<tr><td>Date</td><td>Currency</td><td>Transaction Amount</td><td>Balance</td><td>Transaction Type</td><td>Counter Party</td><td>Customer Summary</td></tr>
+				<tr><td>Date</td><td>Currency</td><td>Transaction Amount</td><td>Balance</td><td>Transaction Ty</td><td></td><td></td></tr>
+				<tr><td>Date</td><td>Currency</td><td>Transaction Amount</td><td>Balance</td><td>Transaction Type</td><td>招商银行股份有限公司</td><td></td></tr>
+				<tr><td>2026-01-02</td><td>CNY</td><td>-2.00</td><td>7.00</td><td>退款</td><td>张三</td><td>退货</td></tr>
 			</table>`},
 		},
 	}}
@@ -88,10 +89,10 @@ func TestConvertUsesMinerUContentListAndWritesArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(string(csvData), "记账日期,货币,交易金额,联机余额,交易摘要,对手信息") != 1 {
+	if strings.Count(string(csvData), "记账日期,货币,交易金额,联机余额,交易摘要,对手信息,客户摘要") != 1 {
 		t.Fatalf("expected repeated header to be removed: %s", csvData)
 	}
-	if strings.Contains(string(csvData), "Date,Currency,Transaction Amount,Balance,Transaction Type,Counter Party") {
+	if strings.Contains(string(csvData), "Date,Currency,Transaction Amount,Balance,Transaction Type,Counter Party,Customer Summary") {
 		t.Fatalf("expected English header alias to be removed: %s", csvData)
 	}
 	if strings.Contains(string(csvData), "Transaction Ty") {
@@ -215,27 +216,24 @@ func TestConvertValidationFailsWithoutMatchingTables(t *testing.T) {
 func TestValueMatchesGuardFormatStrictDates(t *testing.T) {
 	cases := []struct {
 		value  string
-		format string
+		format adapters.RowGuardFormat
 		want   bool
 	}{
-		{value: "2024-02-29", format: "YYYY-MM-DD", want: true},
-		{value: "2026-01-01", format: "YYYY-MM-DD", want: true},
-		{value: "2025-02-29", format: "YYYY-MM-DD", want: false},
-		{value: "2025-2-09", format: "YYYY-MM-DD", want: false},
-		{value: "20240229", format: "YYYYMMDD", want: true},
-		{value: "20250229", format: "YYYYMMDD", want: false},
-		{value: "2025029", format: "YYYYMMDD", want: false},
-		{value: "20240229 23:59:59", format: "YYYYMMDD HH:mm:ss", want: true},
-		{value: "20250229 23:59:59", format: "YYYYMMDD HH:mm:ss", want: false},
-		{value: "20240229 24:00:00", format: "YYYYMMDD HH:mm:ss", want: false},
-		{value: "2024022923:59:59", format: "YYYYMMDDHH:mm:ss", want: true},
-		{value: "2025022923:59:59", format: "YYYYMMDDHH:mm:ss", want: false},
-		{value: "2024022924:00:00", format: "YYYYMMDDHH:mm:ss", want: false},
-		{value: "02/29", format: "MM/DD", want: true},
-		{value: "02/31", format: "MM/DD", want: false},
-		{value: "13/01", format: "MM/DD", want: false},
-		{value: "2/09", format: "MM/DD", want: false},
-		{value: "02/09", format: "unknown", want: false},
+		{value: "2024-02-29", format: adapters.RowGuardFormatYYYYDashMMDashDD, want: true},
+		{value: "2026-01-01", format: adapters.RowGuardFormatYYYYDashMMDashDD, want: true},
+		{value: "2025-02-29", format: adapters.RowGuardFormatYYYYDashMMDashDD, want: false},
+		{value: "2025-2-09", format: adapters.RowGuardFormatYYYYDashMMDashDD, want: false},
+		{value: "20240229", format: adapters.RowGuardFormatYYYYMMDD, want: true},
+		{value: "20250229", format: adapters.RowGuardFormatYYYYMMDD, want: false},
+		{value: "2025029", format: adapters.RowGuardFormatYYYYMMDD, want: false},
+		{value: "2024022923:59:59", format: adapters.RowGuardFormatYYYYMMDDHHMMSS, want: true},
+		{value: "2025022923:59:59", format: adapters.RowGuardFormatYYYYMMDDHHMMSS, want: false},
+		{value: "2024022924:00:00", format: adapters.RowGuardFormatYYYYMMDDHHMMSS, want: false},
+		{value: "02/29", format: adapters.RowGuardFormatMMSlashDD, want: true},
+		{value: "02/31", format: adapters.RowGuardFormatMMSlashDD, want: false},
+		{value: "13/01", format: adapters.RowGuardFormatMMSlashDD, want: false},
+		{value: "2/09", format: adapters.RowGuardFormatMMSlashDD, want: false},
+		{value: "02/09", format: adapters.RowGuardFormat("unknown"), want: false},
 	}
 	for _, tc := range cases {
 		if got := valueMatchesGuardFormat(tc.value, tc.format); got != tc.want {
@@ -276,7 +274,17 @@ func TestColorizeStdLogLine(t *testing.T) {
 	}
 }
 
-func testRegistry() *adapters.Registry {
+type mapAdapterRegistry map[string]adapters.Adapter
+
+func (r mapAdapterRegistry) MustGet(key string) (adapters.Adapter, error) {
+	adapter, ok := r[key]
+	if !ok {
+		return adapters.Adapter{}, fmt.Errorf("missing test adapter %q", key)
+	}
+	return adapter, nil
+}
+
+func testRegistry() mapAdapterRegistry {
 	cmb, err := adapters.BuiltinRegistry().MustGet("cmb_debit")
 	if err != nil {
 		panic(err)
@@ -286,5 +294,8 @@ func testRegistry() *adapters.Registry {
 	if err != nil {
 		panic(err)
 	}
-	return adapters.NewRegistry(cmb, abc)
+	return mapAdapterRegistry{
+		cmb.Key: cmb,
+		abc.Key: abc,
+	}
 }

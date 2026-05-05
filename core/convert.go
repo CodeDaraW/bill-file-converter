@@ -294,20 +294,14 @@ func tableFromRows(rows [][]string, adapter adapters.Adapter, page int) (Table, 
 }
 
 func matchingHeaderRow(rows [][]string, adapter adapters.Adapter) (int, []string) {
-	for _, spec := range adapter.ExpectedTables {
-		allowed := spec.AllowedHeaders
-		if len(allowed) == 0 && len(spec.Headers) > 0 {
-			allowed = [][]string{spec.Headers}
+	for rowIndex, row := range rows {
+		normalized := normalizeStringRow(row)
+		if equalStringSlices(normalized, adapter.Headers) || equalHeaderSlices(normalized, adapter.Headers) {
+			return rowIndex, append([]string(nil), adapter.Headers...)
 		}
-		for rowIndex, row := range rows {
-			normalized := normalizeStringRow(row)
-			for headerIndex, headers := range allowed {
-				if equalStringSlices(normalized, headers) || equalHeaderSlices(normalized, headers) {
-					return rowIndex, append([]string(nil), headers...)
-				}
-				if headerIndex < len(spec.HeaderAliases) && (equalStringSlices(normalized, spec.HeaderAliases[headerIndex]) || equalHeaderSlices(normalized, spec.HeaderAliases[headerIndex])) {
-					return rowIndex, append([]string(nil), headers...)
-				}
+		for _, alias := range adapter.HeaderAliases {
+			if equalStringSlices(normalized, alias) || equalHeaderSlices(normalized, alias) {
+				return rowIndex, append([]string(nil), adapter.Headers...)
 			}
 		}
 	}
@@ -340,11 +334,9 @@ func stringRowMatchesHeaders(row []string, headers []string) bool {
 
 func rowMatchesHeaderAlias(row []string, adapter adapters.Adapter) bool {
 	normalized := normalizeStringRow(row)
-	for _, spec := range adapter.ExpectedTables {
-		for _, alias := range spec.HeaderAliases {
-			if equalStringSlices(normalized, alias) || equalHeaderSlices(normalized, alias) || rowMatchesHeaderAliasPrefix(normalized, alias) {
-				return true
-			}
+	for _, alias := range adapter.HeaderAliases {
+		if equalStringSlices(normalized, alias) || equalHeaderSlices(normalized, alias) || rowMatchesHeaderAliasPrefix(normalized, alias) {
+			return true
 		}
 	}
 	return false
@@ -358,11 +350,12 @@ func rowStartsWithHeaderAlias(row []string, adapter adapters.Adapter) bool {
 	if first == "" {
 		return false
 	}
-	for _, spec := range adapter.ExpectedTables {
-		for _, start := range spec.HeaderStarts {
-			if first == normalizeText(start) {
-				return true
-			}
+	if first == normalizeText(adapter.Headers[0]) {
+		return true
+	}
+	for _, alias := range adapter.HeaderAliases {
+		if len(alias) > 0 && first == normalizeText(alias[0]) {
+			return true
 		}
 	}
 	return false
@@ -400,21 +393,18 @@ func rowMatchesGuards(row []string, adapter adapters.Adapter) bool {
 	return true
 }
 
-func valueMatchesGuardFormat(value, format string) bool {
+func valueMatchesGuardFormat(value string, format adapters.RowGuardFormat) bool {
 	switch format {
-	case "YYYY-MM-DD":
+	case adapters.RowGuardFormatYYYYDashMMDashDD:
 		parsed, err := time.Parse("2006-01-02", value)
 		return err == nil && parsed.Format("2006-01-02") == value
-	case "YYYYMMDD":
+	case adapters.RowGuardFormatYYYYMMDD:
 		parsed, err := time.Parse("20060102", value)
 		return err == nil && parsed.Format("20060102") == value
-	case "YYYYMMDD HH:mm:ss":
-		parsed, err := time.Parse("20060102 15:04:05", value)
-		return err == nil && parsed.Format("20060102 15:04:05") == value
-	case "YYYYMMDDHH:mm:ss":
+	case adapters.RowGuardFormatYYYYMMDDHHMMSS:
 		parsed, err := time.Parse("2006010215:04:05", value)
 		return err == nil && parsed.Format("2006010215:04:05") == value
-	case "MM/DD":
+	case adapters.RowGuardFormatMMSlashDD:
 		parsed, err := time.Parse("2006/01/02", "2000/"+value)
 		return err == nil && parsed.Format("01/02") == value
 	default:
