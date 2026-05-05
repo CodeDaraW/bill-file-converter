@@ -88,7 +88,7 @@ func Convert(ctx context.Context, input Input, options Options) (Result, error) 
 	}
 
 	logInfof(options, "submitting %d PDF input(s) to MinerU", len(inputFiles(parseInput)))
-	parseResult, err := options.MinerU.Parse(ctx, parseInput)
+	parseResult, err := parseMinerUInInputOrder(ctx, options.MinerU, parseInput)
 	logMinerUAudit(options, parseResult)
 	if err != nil {
 		logErrorf(options, "MinerU parse failed: %s", err)
@@ -152,6 +152,68 @@ func Convert(ctx context.Context, input Input, options Options) (Result, error) 
 	}
 	logInfof(options, "done")
 	return result, nil
+}
+
+func parseMinerUInInputOrder(ctx context.Context, client MinerUClient, input Input) (MinerUParseResult, error) {
+	files := inputFiles(input)
+	if len(files) <= 1 {
+		return client.Parse(ctx, input)
+	}
+	var combined MinerUParseResult
+	var rawRequests []json.RawMessage
+	var rawResponses []json.RawMessage
+	pageOffset := 0
+	for _, file := range files {
+		result, err := client.Parse(ctx, Input{
+			Path:     file.Path,
+			Reader:   file.Reader,
+			FileName: inputFileName(file),
+			MIMEType: file.MIMEType,
+		})
+		appendRawJSON := func(values []json.RawMessage, raw string) []json.RawMessage {
+			if strings.TrimSpace(raw) == "" {
+				return values
+			}
+			return append(values, json.RawMessage(raw))
+		}
+		rawRequests = appendRawJSON(rawRequests, result.RawRequest)
+		rawResponses = appendRawJSON(rawResponses, result.RawResponse)
+		if err != nil {
+			combined.RawRequest = marshalRawMessages(rawRequests)
+			combined.RawResponse = marshalRawMessages(rawResponses)
+			return combined, err
+		}
+		maxPage := -1
+		for _, item := range result.ContentList {
+			if item.PageIndex != nil {
+				adjusted := *item.PageIndex + pageOffset
+				item.PageIndex = &adjusted
+				if adjusted > maxPage {
+					maxPage = adjusted
+				}
+			}
+			combined.ContentList = append(combined.ContentList, item)
+		}
+		if maxPage >= pageOffset {
+			pageOffset = maxPage + 1
+		} else {
+			pageOffset++
+		}
+	}
+	combined.RawRequest = marshalRawMessages(rawRequests)
+	combined.RawResponse = marshalRawMessages(rawResponses)
+	return combined, nil
+}
+
+func marshalRawMessages(values []json.RawMessage) string {
+	if len(values) == 0 {
+		return ""
+	}
+	data, err := json.MarshalIndent(values, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func DocumentFromMinerUContent(contentList []MinerUContent, adapter adapters.Adapter) Document {
@@ -346,6 +408,12 @@ func valueMatchesGuardFormat(value, format string) bool {
 	case "YYYYMMDD":
 		parsed, err := time.Parse("20060102", value)
 		return err == nil && parsed.Format("20060102") == value
+	case "YYYYMMDD HH:mm:ss":
+		parsed, err := time.Parse("20060102 15:04:05", value)
+		return err == nil && parsed.Format("20060102 15:04:05") == value
+	case "YYYYMMDDHH:mm:ss":
+		parsed, err := time.Parse("2006010215:04:05", value)
+		return err == nil && parsed.Format("2006010215:04:05") == value
 	case "MM/DD":
 		parsed, err := time.Parse("2006/01/02", "2000/"+value)
 		return err == nil && parsed.Format("01/02") == value

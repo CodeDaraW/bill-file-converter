@@ -5,6 +5,7 @@ func builtinAdapters() []Adapter {
 		cmbDebitAdapter(),
 		cmbCreditAdapter(),
 		abcDebitAdapter(),
+		zbankDebitAdapter(),
 	}
 }
 
@@ -74,6 +75,25 @@ func abcDebitAdapter() Adapter {
 		ExpectedTables: []TableSpec{
 			{
 				AllowedHeaders: [][]string{headers},
+				MinColumns:     len(headers),
+			},
+		},
+	}
+}
+
+func zbankDebitAdapter() Adapter {
+	headers := []string{"交易时间", "币种", "交易金额", "账户余额", "对方姓名", "对方账号", "摘要"}
+	headersWithStamp := []string{"交易时间", "币种", "交易金额", "账户余额", "对方姓名", "对方账号电子回单专用章", "摘要"}
+	return Adapter{
+		Key:  "zbank_debit",
+		Name: "众邦银行借记卡",
+		RowGuards: []RowGuard{
+			{Column: 0, Format: "YYYYMMDDHH:mm:ss"},
+		},
+		ExpectedTables: []TableSpec{
+			{
+				AllowedHeaders: [][]string{headers},
+				HeaderAliases:  [][]string{headersWithStamp},
 				MinColumns:     len(headers),
 			},
 		},

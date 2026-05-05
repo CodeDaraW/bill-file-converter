@@ -11,13 +11,21 @@ import (
 )
 
 type fakeMinerU struct {
-	result MinerUParseResult
-	err    error
-	input  Input
+	result  MinerUParseResult
+	err     error
+	input   Input
+	inputs  []Input
+	results []MinerUParseResult
 }
 
 func (m *fakeMinerU) Parse(_ context.Context, input Input) (MinerUParseResult, error) {
 	m.input = input
+	m.inputs = append(m.inputs, input)
+	if len(m.results) > 0 {
+		result := m.results[0]
+		m.results = m.results[1:]
+		return result, m.err
+	}
 	return m.result, m.err
 }
 
@@ -103,13 +111,15 @@ func TestConvertMultiplePDFs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	minerU := &fakeMinerU{result: MinerUParseResult{
-		ContentList: []MinerUContent{
-			{Type: "table", TableBody: `<table>
+	minerU := &fakeMinerU{results: []MinerUParseResult{
+		{ContentList: []MinerUContent{{Type: "table", TableBody: `<table>
 				<tr><th>交易日期</th><th>交易时间</th><th>交易摘要</th><th>交易金额</th><th>本次余额</th><th>对手信息</th><th>日 志 号</th><th>交易渠道</th><th>交易附言</th></tr>
 				<tr><td>20260101</td><td>12:00:00</td><td>转账</td><td>1.00</td><td>2.00</td><td>--</td><td>1234567890</td><td>网银</td><td></td></tr>
-			</table>`},
-		},
+			</table>`}}},
+		{ContentList: []MinerUContent{{Type: "table", TableBody: `<table>
+				<tr><th>交易日期</th><th>交易时间</th><th>交易摘要</th><th>交易金额</th><th>本次余额</th><th>对手信息</th><th>日 志 号</th><th>交易渠道</th><th>交易附言</th></tr>
+				<tr><td>20260102</td><td>13:00:00</td><td>转账</td><td>3.00</td><td>5.00</td><td>--</td><td>1234567891</td><td>网银</td><td></td></tr>
+			</table>`}}},
 	}}
 	result, err := Convert(context.Background(), Input{Files: []InputFile{
 		{Path: first, FileName: "1.pdf"},
@@ -123,11 +133,14 @@ func TestConvertMultiplePDFs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(minerU.input.Files) != 2 {
-		t.Fatalf("expected two input files, got %#v", minerU.input)
+	if len(minerU.inputs) != 2 || minerU.inputs[0].FileName != "1.pdf" || minerU.inputs[1].FileName != "2.pdf" {
+		t.Fatalf("expected sequential input files, got %#v", minerU.inputs)
 	}
 	if got := result.Tables[0].Headers[6]; got != "日志号" {
 		t.Fatalf("expected header spaces to be stripped via profile headers, got %q", got)
+	}
+	if len(result.Tables[0].Rows) != 2 {
+		t.Fatalf("expected merged rows from two PDFs, got %#v", result.Tables[0].Rows)
 	}
 }
 
@@ -212,6 +225,12 @@ func TestValueMatchesGuardFormatStrictDates(t *testing.T) {
 		{value: "20240229", format: "YYYYMMDD", want: true},
 		{value: "20250229", format: "YYYYMMDD", want: false},
 		{value: "2025029", format: "YYYYMMDD", want: false},
+		{value: "20240229 23:59:59", format: "YYYYMMDD HH:mm:ss", want: true},
+		{value: "20250229 23:59:59", format: "YYYYMMDD HH:mm:ss", want: false},
+		{value: "20240229 24:00:00", format: "YYYYMMDD HH:mm:ss", want: false},
+		{value: "2024022923:59:59", format: "YYYYMMDDHH:mm:ss", want: true},
+		{value: "2025022923:59:59", format: "YYYYMMDDHH:mm:ss", want: false},
+		{value: "2024022924:00:00", format: "YYYYMMDDHH:mm:ss", want: false},
 		{value: "02/29", format: "MM/DD", want: true},
 		{value: "02/31", format: "MM/DD", want: false},
 		{value: "13/01", format: "MM/DD", want: false},
