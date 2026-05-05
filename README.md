@@ -43,6 +43,8 @@ mineru:
 
 `mineru.base_url` 必须改成真实地址，例如动态本地端口、内网 IP 或三方兼容服务地址。客户端固定调用 `{base_url}/file_parse`，不提供 path 配置。解析请求会固定发送 `return_md=false`、`formula_enable=false`、`table_enable=true`、`return_content_list=true`，这些不是配置项。
 
+如果配置中省略 `lang_list`、`backend`、`parse_method` 或 `timeout`，CLI 会使用上面的默认值；显式配置为空值也按默认值处理。
+
 检查 MinerU 服务：
 
 ```bash
@@ -66,7 +68,7 @@ go run ./cmd/bill-file-converter convert ./statement.pdf \
   --output output
 ```
 
-同一期账单可以传入多个 PDF，文件按命令行参数顺序上传给 MinerU：
+同一期账单可以传入多个 PDF，文件按命令行参数顺序解析并合并：
 
 ```bash
 go run ./cmd/bill-file-converter convert ./page-1.pdf ./page-2.pdf ./page-3.pdf \
@@ -117,6 +119,11 @@ output/<task_id>/
 - `logger/mineru_request.json` / `mineru_response.json`：MinerU 原始请求摘要和响应体。长 JSON 单独存放，避免写入行日志后导致编辑器卡顿。
 - `logger/failure.json`：失败时写入，包含 source、adapter、task id、时间戳和错误信息。
 
+## 运行依赖
+
+- MinerU local-compatible API 服务。
+- Ghostscript 可执行文件 `gs`：仅在账单 profile 启用 `RemoveImages` 时需要，例如当前部分借记卡 profile 会先移除 PDF 中影响 VLM 识别的水印图片。未启用 `RemoveImages` 的 profile 不需要安装 Ghostscript。
+
 ## 清洗规则
 
 - 只处理 `type=table` 且存在 `table_body` 的块。
@@ -135,7 +142,7 @@ output/<task_id>/
 4. `convert` 生成 `result/result.json` 和 `result/result.csv`。
 5. 日志包含 task id，所有产物写入 `output/<task_id>/`。
 6. `result.json.task_id` 与输出目录名一致。
-7. `result.json.source` 记录源 PDF 路径/文件名，多个 PDF 写入 `source.files`。
+7. `result.json.source.files` 记录源 PDF 路径/文件名，单个或多个 PDF 都使用同一结构。
 8. `result.json.metadata.raw_text` 包含去重后的原始非表格文本。
 9. `result.json.tables[].headers` 精确匹配 profile 允许的表头。
 10. CSV 列顺序和行顺序与 MinerU 表格顺序一致，不包含 metadata 或 title 行。
@@ -149,10 +156,11 @@ output/<task_id>/
 
 ```go
 registry := adapters.NewRegistry(adapters.Adapter{
-    Key:  "private_payroll",
-    Name: "Private Payroll",
-    ExpectedTables: []adapters.TableSpec{
-        {AllowedHeaders: [][]string{{"日期", "项目", "金额"}}, MinColumns: 3},
+    Key:     "private_payroll",
+    Name:    "Private Payroll",
+    Headers: []string{"日期", "项目", "金额"},
+    RowGuards: []adapters.RowGuard{
+        {Column: 0, Format: adapters.RowGuardFormatYYYYDashMMDashDD},
     },
 })
 ```

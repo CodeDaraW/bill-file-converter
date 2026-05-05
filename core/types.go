@@ -4,16 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"path/filepath"
 
 	"github.com/deb-sig/bill-file-converter/core/adapters"
 )
 
 type Input struct {
-	Path     string
-	Reader   io.Reader
-	FileName string
-	MIMEType string
-	Files    []InputFile
+	Files []InputFile
 }
 
 type InputFile struct {
@@ -23,6 +20,16 @@ type InputFile struct {
 	MIMEType string
 }
 
+func (f InputFile) Name() string {
+	if f.FileName != "" {
+		return f.FileName
+	}
+	if f.Path != "" {
+		return filepath.Base(f.Path)
+	}
+	return "input.pdf"
+}
+
 type Options struct {
 	MinerU          MinerUClient
 	AdapterKey      string
@@ -30,7 +37,6 @@ type Options struct {
 	AdapterRegistry AdapterRegistry
 	SkipCSV         bool
 	LogWriter       io.Writer
-	taskID          string
 }
 
 type AdapterRegistry interface {
@@ -43,10 +49,7 @@ type Document struct {
 }
 
 type SourceInfo struct {
-	Path     string           `json:"path,omitempty"`
-	FileName string           `json:"file_name,omitempty"`
-	MIMEType string           `json:"mime_type,omitempty"`
-	Files    []SourceFileInfo `json:"files,omitempty"`
+	Files []SourceFileInfo `json:"files,omitempty"`
 }
 
 type SourceFileInfo struct {
@@ -81,7 +84,6 @@ type Artifacts struct {
 	MinerURawRequestPath  string `json:"mineru_raw_request_path,omitempty"`
 	MinerURawResponsePath string `json:"mineru_raw_response_path,omitempty"`
 	FailurePath           string `json:"failure_path,omitempty"`
-	CSVBytes              []byte `json:"-"`
 }
 
 type Result struct {
@@ -131,5 +133,5 @@ type MinerUParseResult struct {
 }
 
 type MinerUClient interface {
-	Parse(ctx context.Context, input Input) (MinerUParseResult, error)
+	Parse(ctx context.Context, file InputFile) (MinerUParseResult, error)
 }

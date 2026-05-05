@@ -46,17 +46,23 @@ type registry struct {
 	adapters map[string]Adapter
 }
 
+// NewRegistry creates an adapter registry for Convert callers that provide
+// private profiles outside the built-in CLI profile set.
+func NewRegistry(adapters ...Adapter) *registry {
+	values := map[string]Adapter{}
+	for _, adapter := range adapters {
+		values[adapter.Key] = adapter
+	}
+	return &registry{adapters: values}
+}
+
 func BuiltinRegistry() *registry {
-	adapters := map[string]Adapter{}
-	for _, adapter := range []Adapter{
+	return NewRegistry(
 		abcDebitAdapter(),
 		cmbCreditAdapter(),
 		cmbDebitAdapter(),
 		zbankDebitAdapter(),
-	} {
-		adapters[adapter.Key] = adapter
-	}
-	return &registry{adapters: adapters}
+	)
 }
 
 func (r *registry) List() []Adapter {

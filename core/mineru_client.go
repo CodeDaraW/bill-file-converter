@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -84,9 +83,8 @@ func (c *MinerUHTTPClient) Ping(ctx context.Context) error {
 	return fmt.Errorf("MinerU returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
 }
 
-func (c *MinerUHTTPClient) Parse(ctx context.Context, input Input) (MinerUParseResult, error) {
-	files := inputFiles(input)
-	rawRequest := rawMinerURequest(c.config, files)
+func (c *MinerUHTTPClient) Parse(ctx context.Context, file InputFile) (MinerUParseResult, error) {
+	rawRequest := rawMinerURequest(c.config, file)
 	var last MinerUParseResult
 	attempts := c.config.MaxRetries + 1
 	if attempts < 1 {
@@ -101,7 +99,7 @@ func (c *MinerUHTTPClient) Parse(ctx context.Context, input Input) (MinerUParseR
 			case <-time.After(backoffDelay(attempt)):
 			}
 		}
-		result, status, err := c.parseOnce(ctx, input, rawRequest)
+		result, status, err := c.parseOnce(ctx, file, rawRequest)
 		last = result
 		lastErr = err
 		if err == nil {
@@ -114,8 +112,8 @@ func (c *MinerUHTTPClient) Parse(ctx context.Context, input Input) (MinerUParseR
 	return last, lastErr
 }
 
-func (c *MinerUHTTPClient) parseOnce(ctx context.Context, input Input, rawRequest string) (MinerUParseResult, int, error) {
-	body, contentType, err := c.multipartBody(input)
+func (c *MinerUHTTPClient) parseOnce(ctx context.Context, file InputFile, rawRequest string) (MinerUParseResult, int, error) {
+	body, contentType, err := c.multipartBody(file)
 	if err != nil {
 		return MinerUParseResult{RawRequest: rawRequest}, 0, err
 	}
@@ -149,14 +147,12 @@ func (c *MinerUHTTPClient) parseOnce(ctx context.Context, input Input, rawReques
 	return result, resp.StatusCode, nil
 }
 
-func (c *MinerUHTTPClient) multipartBody(input Input) ([]byte, string, error) {
+func (c *MinerUHTTPClient) multipartBody(file InputFile) ([]byte, string, error) {
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
-	for _, file := range inputFiles(input) {
-		if err := addMultipartFile(writer, file); err != nil {
-			_ = writer.Close()
-			return nil, "", err
-		}
+	if err := addMultipartFile(writer, file); err != nil {
+		_ = writer.Close()
+		return nil, "", err
 	}
 	for _, lang := range c.config.LangList {
 		if err := writer.WriteField("lang_list", lang); err != nil {
@@ -188,14 +184,7 @@ func (c *MinerUHTTPClient) multipartBody(input Input) ([]byte, string, error) {
 }
 
 func addMultipartFile(writer *multipart.Writer, file InputFile) error {
-	name := file.FileName
-	if name == "" && file.Path != "" {
-		name = filepath.Base(file.Path)
-	}
-	if name == "" {
-		name = "input.pdf"
-	}
-	part, err := writer.CreateFormFile("files", name)
+	part, err := writer.CreateFormFile("files", file.Name())
 	if err != nil {
 		return err
 	}
@@ -309,20 +298,12 @@ func rawPageIndex(value any) (int, bool) {
 	}
 }
 
-func rawMinerURequest(config MinerUHTTPConfig, files []InputFile) string {
-	fileNames := make([]string, 0, len(files))
-	for _, file := range files {
-		name := file.FileName
-		if name == "" && file.Path != "" {
-			name = filepath.Base(file.Path)
-		}
-		fileNames = append(fileNames, name)
-	}
+func rawMinerURequest(config MinerUHTTPConfig, file InputFile) string {
 	payload := map[string]any{
 		"method": "POST",
 		"url":    joinURL(config.BaseURL, "/file_parse"),
 		"form": map[string]any{
-			"files":               fileNames,
+			"files":               []string{file.Name()},
 			"lang_list":           config.LangList,
 			"backend":             config.Backend,
 			"parse_method":        config.ParseMethod,

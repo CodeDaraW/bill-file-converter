@@ -15,14 +15,14 @@ import (
 type fakeMinerU struct {
 	result  MinerUParseResult
 	err     error
-	input   Input
-	inputs  []Input
+	input   InputFile
+	inputs  []InputFile
 	results []MinerUParseResult
 }
 
-func (m *fakeMinerU) Parse(_ context.Context, input Input) (MinerUParseResult, error) {
-	m.input = input
-	m.inputs = append(m.inputs, input)
+func (m *fakeMinerU) Parse(_ context.Context, file InputFile) (MinerUParseResult, error) {
+	m.input = file
+	m.inputs = append(m.inputs, file)
 	if len(m.results) > 0 {
 		result := m.results[0]
 		m.results = m.results[1:]
@@ -56,7 +56,7 @@ func TestConvertUsesMinerUContentListAndWritesArtifacts(t *testing.T) {
 			</table>`},
 		},
 	}}
-	result, err := Convert(context.Background(), Input{Path: pdf, FileName: "bill.pdf"}, Options{
+	result, err := Convert(context.Background(), Input{Files: []InputFile{{Path: pdf, FileName: "bill.pdf"}}}, Options{
 		MinerU:          minerU,
 		AdapterKey:      "cmb_debit",
 		AdapterRegistry: testRegistry(),
@@ -166,7 +166,7 @@ func TestCmbCreditSkipsSectionRowsAndSummaryRows(t *testing.T) {
 			</table>`},
 		},
 	}}
-	result, err := Convert(context.Background(), Input{Path: pdf, FileName: "bill.pdf"}, Options{
+	result, err := Convert(context.Background(), Input{Files: []InputFile{{Path: pdf, FileName: "bill.pdf"}}}, Options{
 		MinerU:          minerU,
 		AdapterKey:      "cmb_credit",
 		AdapterRegistry: adapters.BuiltinRegistry(),
@@ -200,7 +200,7 @@ func TestConvertValidationFailsWithoutMatchingTables(t *testing.T) {
 	minerU := &fakeMinerU{result: MinerUParseResult{
 		ContentList: []MinerUContent{{Type: "table", TableBody: `<table><tr><th>A</th></tr><tr><td>B</td></tr></table>`}},
 	}}
-	result, err := Convert(context.Background(), Input{Path: pdf, FileName: "bill.pdf"}, Options{
+	result, err := Convert(context.Background(), Input{Files: []InputFile{{Path: pdf, FileName: "bill.pdf"}}}, Options{
 		MinerU:          minerU,
 		AdapterKey:      "cmb_debit",
 		AdapterRegistry: testRegistry(),

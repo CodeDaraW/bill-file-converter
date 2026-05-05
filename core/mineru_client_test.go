@@ -12,12 +12,9 @@ import (
 
 func TestMinerUHTTPClientPostsMultipartToFileParse(t *testing.T) {
 	dir := t.TempDir()
-	first := filepath.Join(dir, "1.pdf")
-	second := filepath.Join(dir, "2.pdf")
-	for _, path := range []string{first, second} {
-		if err := os.WriteFile(path, []byte("%PDF-1.7"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	pdf := filepath.Join(dir, "1.pdf")
+	if err := os.WriteFile(pdf, []byte("%PDF-1.7"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 	var seenPath string
 	var seenFiles int
@@ -45,17 +42,14 @@ func TestMinerUHTTPClientPostsMultipartToFileParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := client.Parse(context.Background(), Input{Files: []InputFile{
-		{Path: first, FileName: "1.pdf"},
-		{Path: second, FileName: "2.pdf"},
-	}})
+	result, err := client.Parse(context.Background(), InputFile{Path: pdf, FileName: "1.pdf"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if seenPath != "/file_parse" {
 		t.Fatalf("path = %q", seenPath)
 	}
-	if seenFiles != 2 {
+	if seenFiles != 1 {
 		t.Fatalf("files = %d", seenFiles)
 	}
 	if seenReturnContentList != "true" {

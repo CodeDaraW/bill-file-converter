@@ -81,11 +81,6 @@ func runConvert(ctx context.Context, args []string, stdout, stderr io.Writer, in
 	for _, path := range inputFiles {
 		input.Files = append(input.Files, core.InputFile{Path: path, FileName: filepath.Base(path)})
 	}
-	if len(input.Files) == 1 {
-		input.Path = input.Files[0].Path
-		input.FileName = input.Files[0].FileName
-		input.Files = nil
-	}
 	result, err := core.Convert(ctx, input, core.Options{
 		MinerU:          minerU,
 		AdapterKey:      *typeKey,

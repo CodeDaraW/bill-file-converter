@@ -18,7 +18,7 @@ func ExportCSV(doc Document) ([]byte, error) {
 				if err := writer.Write(table.Headers); err != nil {
 					return nil, err
 				}
-			} else if !equalStrings(table.Headers, firstHeaders) {
+			} else if !equalExactStrings(table.Headers, firstHeaders) {
 				if err := writer.Write(table.Headers); err != nil {
 					return nil, err
 				}

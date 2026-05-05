@@ -16,7 +16,7 @@ func ValidateDocument(doc Document, adapter adapters.Adapter) ValidationReport {
 		if len(table.Headers) == 0 {
 			report.Errors = append(report.Errors, fmt.Sprintf("table %d has no headers", tableIdx+1))
 		}
-		if !equalStrings(table.Headers, adapter.Headers) {
+		if !equalExactStrings(table.Headers, adapter.Headers) {
 			report.Errors = append(report.Errors, fmt.Sprintf("table %d headers do not match adapter profile: got %q, expected %q", tableIdx+1, table.Headers, adapter.Headers))
 		}
 		for rowIdx, row := range table.Rows {
@@ -33,7 +33,15 @@ func ValidateDocument(doc Document, adapter adapters.Adapter) ValidationReport {
 	return report
 }
 
-func equalStrings(a, b []string) bool {
+type ValidationError struct {
+	Report ValidationReport
+}
+
+func (e ValidationError) Error() string {
+	return "validation failed"
+}
+
+func equalExactStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
