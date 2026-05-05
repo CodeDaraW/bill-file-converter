@@ -676,7 +676,6 @@ func writeArtifacts(resultDir string, result *Result) error {
 	if err != nil {
 		return err
 	}
-	result.Artifacts.JSONBytes = jsonBytes
 	if err := os.WriteFile(jsonPath, jsonBytes, 0o644); err != nil {
 		return err
 	}

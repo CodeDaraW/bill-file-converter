@@ -82,7 +82,6 @@ type Artifacts struct {
 	MinerURawResponsePath string `json:"mineru_raw_response_path,omitempty"`
 	FailurePath           string `json:"failure_path,omitempty"`
 	CSVBytes              []byte `json:"-"`
-	JSONBytes             []byte `json:"-"`
 }
 
 type Result struct {
@@ -133,9 +132,4 @@ type MinerUParseResult struct {
 
 type MinerUClient interface {
 	Parse(ctx context.Context, input Input) (MinerUParseResult, error)
-}
-
-// Pinger is implemented by clients that can verify connectivity and credentials.
-type Pinger interface {
-	Ping(ctx context.Context) error
 }
