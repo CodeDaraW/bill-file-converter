@@ -41,7 +41,6 @@ type AdapterRegistry interface {
 
 type Document struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
-	Title    string            `json:"title,omitempty"`
 	Tables   []Table           `json:"tables"`
 }
 

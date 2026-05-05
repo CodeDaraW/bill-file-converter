@@ -8,7 +8,6 @@ import (
 func TestExportCSVMultipleTablesAndNullCells(t *testing.T) {
 	value := "abc"
 	data, err := ExportCSV(Document{
-		Title: "Title",
 		Tables: []Table{
 			{Headers: []string{"A", "B"}, Rows: [][]*string{{&value, nil}}},
 			{Name: "Second", Headers: []string{"C"}, Rows: [][]*string{{nil}}},
@@ -18,8 +17,8 @@ func TestExportCSVMultipleTablesAndNullCells(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	if strings.Contains(text, "Title") || strings.Contains(text, "Second") {
-		t.Fatalf("csv should not contain title or table names: %q", text)
+	if strings.Contains(text, "Second") {
+		t.Fatalf("csv should not contain table names: %q", text)
 	}
 	for _, want := range []string{"A,B", "abc,", "C"} {
 		if !strings.Contains(text, want) {

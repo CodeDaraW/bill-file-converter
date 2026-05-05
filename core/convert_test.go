@@ -131,6 +131,51 @@ func TestConvertMultiplePDFs(t *testing.T) {
 	}
 }
 
+func TestCmbCreditSkipsSectionRowsAndSummaryRows(t *testing.T) {
+	dir := t.TempDir()
+	pdf := filepath.Join(dir, "bill.pdf")
+	if err := os.WriteFile(pdf, []byte("%PDF-1.7"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	minerU := &fakeMinerU{result: MinerUParseResult{
+		ContentList: []MinerUContent{
+			{Type: "text", Text: "招商银行信用卡对账单（个人消费卡账户 2025年02月）（补）"},
+			{Type: "table", TableBody: `<table>
+				<tr><th>交易日 SOLD</th><th>记账日 POSTED</th><th>交易摘要 DESCRIPTION</th><th>人民币金额 RMB AMOUNT</th><th>卡号末四位 CARD NO(Last 4digits)</th><th>交易地金额 Original Tran Amount</th></tr>
+				<tr><td>还款</td><td></td><td></td><td></td><td></td><td></td></tr>
+				<tr><td>还款</td><td>还款</td><td>还款</td><td>还款</td><td>还款</td><td>还款</td></tr>
+				<tr><td></td><td>01/27</td><td>银联转账还款</td><td>-29.50</td><td>2508</td><td>-29.50</td></tr>
+				<tr><td>消费</td><td></td><td></td><td></td><td></td><td></td></tr>
+				<tr><td>01/12</td><td>01/13</td><td>支付宝-上海拉扎斯信息科技有限公司</td><td>1.70</td><td>2508</td><td>1.70(CN)</td></tr>
+				<tr><td>本期还款总额Current Balance</td><td>=</td><td>上期账单金额Balance B/F</td><td>-</td><td>上期还款金额Payment</td><td>+</td></tr>
+			</table>`},
+		},
+	}}
+	result, err := Convert(context.Background(), Input{Path: pdf, FileName: "bill.pdf"}, Options{
+		MinerU:          minerU,
+		AdapterKey:      "cmb_credit",
+		AdapterRegistry: adapters.BuiltinRegistry(),
+		OutputDir:       filepath.Join(dir, "output"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	csvData, err := os.ReadFile(result.Artifacts.CSVPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(csvData)
+	if !strings.HasPrefix(got, "交易日,记账日,交易摘要,人民币金额,卡号末四位,交易地金额\n") {
+		t.Fatalf("unexpected csv prefix: %s", got)
+	}
+	if strings.Contains(got, "\n还款,") || strings.Contains(got, "\n消费,") {
+		t.Fatalf("expected section rows to be skipped: %s", got)
+	}
+	if strings.Contains(got, "本期还款总额") {
+		t.Fatalf("expected summary rows to be skipped: %s", got)
+	}
+}
+
 func TestConvertValidationFailsWithoutMatchingTables(t *testing.T) {
 	dir := t.TempDir()
 	pdf := filepath.Join(dir, "bill.pdf")
@@ -151,6 +196,28 @@ func TestConvertValidationFailsWithoutMatchingTables(t *testing.T) {
 	}
 	if result.Artifacts.JSONPath == "" {
 		t.Fatal("expected result JSON to be written before validation failure")
+	}
+}
+
+func TestValueMatchesGuardFormatStrictDates(t *testing.T) {
+	cases := []struct {
+		value  string
+		format string
+		want   bool
+	}{
+		{value: "2024-02-29", format: "YYYY-MM-DD", want: true},
+		{value: "2025-02-29", format: "YYYY-MM-DD", want: false},
+		{value: "2025-2-09", format: "YYYY-MM-DD", want: false},
+		{value: "02/29", format: "MM/DD", want: true},
+		{value: "02/31", format: "MM/DD", want: false},
+		{value: "13/01", format: "MM/DD", want: false},
+		{value: "2/09", format: "MM/DD", want: false},
+		{value: "02/09", format: "unknown", want: false},
+	}
+	for _, tc := range cases {
+		if got := valueMatchesGuardFormat(tc.value, tc.format); got != tc.want {
+			t.Fatalf("valueMatchesGuardFormat(%q, %q) = %v, want %v", tc.value, tc.format, got, tc.want)
+		}
 	}
 }
 

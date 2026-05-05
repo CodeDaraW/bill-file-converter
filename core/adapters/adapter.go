@@ -13,7 +13,13 @@ type Adapter struct {
 	// watermarks are known to degrade extraction; leave it off otherwise because
 	// PDF rewriting can alter document structure.
 	RemoveImages   bool
+	RowGuards      []RowGuard
 	ExpectedTables []TableSpec
+}
+
+type RowGuard struct {
+	Column int
+	Format string
 }
 
 type TableSpec struct {

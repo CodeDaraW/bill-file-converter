@@ -212,6 +212,9 @@ func tableFromRows(rows [][]string, adapter adapters.Adapter, page int) (Table, 
 			continue
 		}
 		normalized := normalizeRowWidth(row, len(headers))
+		if !rowMatchesGuards(normalized, adapter) {
+			continue
+		}
 		cells := make([]*string, len(normalized))
 		for i, value := range normalized {
 			value = normalizeText(value)
@@ -229,21 +232,20 @@ func tableFromRows(rows [][]string, adapter adapters.Adapter, page int) (Table, 
 }
 
 func matchingHeaderRow(rows [][]string, adapter adapters.Adapter) (int, []string) {
-	allowed := [][]string{}
 	for _, spec := range adapter.ExpectedTables {
-		if len(spec.AllowedHeaders) > 0 {
-			allowed = append(allowed, spec.AllowedHeaders...)
-			continue
+		allowed := spec.AllowedHeaders
+		if len(allowed) == 0 && len(spec.Headers) > 0 {
+			allowed = [][]string{spec.Headers}
 		}
-		if len(spec.Headers) > 0 {
-			allowed = append(allowed, spec.Headers)
-		}
-	}
-	for rowIndex, row := range rows {
-		normalized := normalizeStringRow(row)
-		for _, headers := range allowed {
-			if equalStringSlices(normalized, headers) || equalHeaderSlices(normalized, headers) {
-				return rowIndex, append([]string(nil), headers...)
+		for rowIndex, row := range rows {
+			normalized := normalizeStringRow(row)
+			for headerIndex, headers := range allowed {
+				if equalStringSlices(normalized, headers) || equalHeaderSlices(normalized, headers) {
+					return rowIndex, append([]string(nil), headers...)
+				}
+				if headerIndex < len(spec.HeaderAliases) && (equalStringSlices(normalized, spec.HeaderAliases[headerIndex]) || equalHeaderSlices(normalized, spec.HeaderAliases[headerIndex])) {
+					return rowIndex, append([]string(nil), headers...)
+				}
 			}
 		}
 	}
@@ -322,6 +324,31 @@ func rowMatchesHeaderAliasPrefix(row []string, alias []string) bool {
 		return false
 	}
 	return matches >= 3
+}
+
+func rowMatchesGuards(row []string, adapter adapters.Adapter) bool {
+	for _, guard := range adapter.RowGuards {
+		if guard.Column < 0 || guard.Column >= len(row) {
+			return false
+		}
+		if !valueMatchesGuardFormat(normalizeText(row[guard.Column]), guard.Format) {
+			return false
+		}
+	}
+	return true
+}
+
+func valueMatchesGuardFormat(value, format string) bool {
+	switch format {
+	case "YYYY-MM-DD":
+		parsed, err := time.Parse("2006-01-02", value)
+		return err == nil && parsed.Format("2006-01-02") == value
+	case "MM/DD":
+		parsed, err := time.Parse("2006/01/02", "2000/"+value)
+		return err == nil && parsed.Format("01/02") == value
+	default:
+		return false
+	}
 }
 
 func stringRowIsEmpty(row []string) bool {
