@@ -53,7 +53,7 @@ func TestConvertUsesMinerUContentListAndWritesArtifacts(t *testing.T) {
 		OutputDir:       filepath.Join(dir, "output"),
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v: %#v", err, result.ValidationReport)
 	}
 	if result.Metadata["raw_text"] != "招商银行交易流水 招商银行交易流水\n招商银行交易流水" {
 		t.Fatalf("unexpected raw_text: %#v", result.Metadata)
@@ -107,7 +107,7 @@ func TestConvertMultiplePDFs(t *testing.T) {
 		ContentList: []MinerUContent{
 			{Type: "table", TableBody: `<table>
 				<tr><th>交易日期</th><th>交易时间</th><th>交易摘要</th><th>交易金额</th><th>本次余额</th><th>对手信息</th><th>日 志 号</th><th>交易渠道</th><th>交易附言</th></tr>
-				<tr><td>2026-01-01</td><td>12:00:00</td><td>转账</td><td>1.00</td><td>2.00</td><td>--</td><td>1234567890</td><td>网银</td><td></td></tr>
+				<tr><td>20260101</td><td>12:00:00</td><td>转账</td><td>1.00</td><td>2.00</td><td>--</td><td>1234567890</td><td>网银</td><td></td></tr>
 			</table>`},
 		},
 	}}
@@ -206,8 +206,12 @@ func TestValueMatchesGuardFormatStrictDates(t *testing.T) {
 		want   bool
 	}{
 		{value: "2024-02-29", format: "YYYY-MM-DD", want: true},
+		{value: "2026-01-01", format: "YYYY-MM-DD", want: true},
 		{value: "2025-02-29", format: "YYYY-MM-DD", want: false},
 		{value: "2025-2-09", format: "YYYY-MM-DD", want: false},
+		{value: "20240229", format: "YYYYMMDD", want: true},
+		{value: "20250229", format: "YYYYMMDD", want: false},
+		{value: "2025029", format: "YYYYMMDD", want: false},
 		{value: "02/29", format: "MM/DD", want: true},
 		{value: "02/31", format: "MM/DD", want: false},
 		{value: "13/01", format: "MM/DD", want: false},

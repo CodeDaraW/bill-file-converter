@@ -69,7 +69,7 @@ func abcDebitAdapter() Adapter {
 		// with table extraction, so strip raster images before parsing.
 		RemoveImages: true,
 		RowGuards: []RowGuard{
-			{Column: 0, Format: "YYYY-MM-DD"},
+			{Column: 0, Format: "YYYYMMDD"},
 		},
 		ExpectedTables: []TableSpec{
 			{

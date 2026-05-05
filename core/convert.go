@@ -343,6 +343,9 @@ func valueMatchesGuardFormat(value, format string) bool {
 	case "YYYY-MM-DD":
 		parsed, err := time.Parse("2006-01-02", value)
 		return err == nil && parsed.Format("2006-01-02") == value
+	case "YYYYMMDD":
+		parsed, err := time.Parse("20060102", value)
+		return err == nil && parsed.Format("20060102") == value
 	case "MM/DD":
 		parsed, err := time.Parse("2006/01/02", "2000/"+value)
 		return err == nil && parsed.Format("01/02") == value
