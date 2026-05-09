@@ -234,6 +234,10 @@ func TestValueMatchesGuardFormatStrictDates(t *testing.T) {
 		{value: "02/31", format: adapters.RowGuardFormatMMSlashDD, want: false},
 		{value: "13/01", format: adapters.RowGuardFormatMMSlashDD, want: false},
 		{value: "2/09", format: adapters.RowGuardFormatMMSlashDD, want: false},
+		{value: "1", format: adapters.RowGuardFormatPositiveInteger, want: true},
+		{value: "001", format: adapters.RowGuardFormatPositiveInteger, want: true},
+		{value: "1.0", format: adapters.RowGuardFormatPositiveInteger, want: false},
+		{value: "打印完毕", format: adapters.RowGuardFormatPositiveInteger, want: false},
 		{value: "02/09", format: adapters.RowGuardFormat("unknown"), want: false},
 	}
 	for _, tc := range cases {

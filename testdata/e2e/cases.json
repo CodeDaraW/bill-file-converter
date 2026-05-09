@@ -11,6 +11,17 @@
     "expected": "abc_debit/expected.csv"
   },
   {
+    "name": "bocom_debit",
+    "type": "bocom_debit",
+    "inputs": [
+      {
+        "filename": "bocom_debit.pdf",
+        "response": "bocom_debit/mineru_response.json"
+      }
+    ],
+    "expected": "bocom_debit/expected.csv"
+  },
+  {
     "name": "cmb_debit",
     "type": "cmb_debit",
     "inputs": [

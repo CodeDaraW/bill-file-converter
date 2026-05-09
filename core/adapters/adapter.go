@@ -40,6 +40,7 @@ const (
 	RowGuardFormatYYYYMMDDHHMMSS   RowGuardFormat = "YYYYMMDDHH:mm:ss"
 	RowGuardFormatYYYYDashMMDashDD RowGuardFormat = "YYYY-MM-DD"
 	RowGuardFormatMMSlashDD        RowGuardFormat = "MM/DD"
+	RowGuardFormatPositiveInteger  RowGuardFormat = "positive_integer"
 )
 
 type registry struct {
@@ -59,6 +60,7 @@ func NewRegistry(adapters ...Adapter) *registry {
 func BuiltinRegistry() *registry {
 	return NewRegistry(
 		abcDebitAdapter(),
+		bocomDebitAdapter(),
 		cmbCreditAdapter(),
 		cmbDebitAdapter(),
 		zbankDebitAdapter(),

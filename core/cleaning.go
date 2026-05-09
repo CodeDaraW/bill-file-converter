@@ -195,6 +195,16 @@ func valueMatchesGuardFormat(value string, format adapters.RowGuardFormat) bool 
 	case adapters.RowGuardFormatMMSlashDD:
 		parsed, err := time.Parse("2006/01/02", "2000/"+value)
 		return err == nil && parsed.Format("01/02") == value
+	case adapters.RowGuardFormatPositiveInteger:
+		if value == "" {
+			return false
+		}
+		for _, ch := range value {
+			if ch < '0' || ch > '9' {
+				return false
+			}
+		}
+		return true
 	default:
 		return false
 	}
