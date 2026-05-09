@@ -27,6 +27,7 @@ coverage
 
 # debug
 desensitize
+.private/
 
 .pnpm-store
 

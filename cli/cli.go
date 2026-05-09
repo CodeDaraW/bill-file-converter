@@ -84,7 +84,7 @@ func runConvert(ctx context.Context, args []string, stdout, stderr io.Writer, in
 	result, err := core.Convert(ctx, input, core.Options{
 		MinerU:          minerU,
 		AdapterKey:      *typeKey,
-		AdapterRegistry: adapters.BuiltinRegistry(),
+		AdapterRegistry: adapterRegistryForCLI(),
 		OutputDir:       *outputDir,
 		SkipCSV:         inspect,
 		LogWriter:       stderr,
@@ -183,10 +183,30 @@ func readNumber(value string, start int) (int, int) {
 }
 
 func runListTypes(stdout io.Writer) int {
-	for _, adapter := range adapters.BuiltinRegistry().List() {
+	for _, adapter := range adapterRegistryForCLI().List() {
 		fmt.Fprintf(stdout, "%s\t%s\n", adapter.Key, adapter.Name)
 	}
 	return 0
+}
+
+type listedAdapterRegistry interface {
+	core.AdapterRegistry
+	List() []adapters.Adapter
+}
+
+func adapterRegistryForCLI() listedAdapterRegistry {
+	registry := adapters.BuiltinRegistry()
+	// Test-only escape hatch for CLI e2e tests that run a fake MinerU server
+	// with placeholder PDF files. Production runs should leave this unset so
+	// profiles that need PDF image removal still exercise Ghostscript.
+	if os.Getenv("BFC_E2E_SKIP_REMOVE_IMAGES") != "1" {
+		return registry
+	}
+	values := registry.List()
+	for i := range values {
+		values[i].RemoveImages = false
+	}
+	return adapters.NewRegistry(values...)
 }
 
 func runConfig(args []string, stdout, stderr io.Writer) int {

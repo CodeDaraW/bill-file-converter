@@ -129,7 +129,7 @@ func TestConvertMultiplePDFs(t *testing.T) {
 	}}, Options{
 		MinerU:          minerU,
 		AdapterKey:      "abc_debit",
-		AdapterRegistry: adapters.BuiltinRegistry(),
+		AdapterRegistry: testRegistry(),
 		OutputDir:       filepath.Join(dir, "output"),
 	})
 	if err != nil {
@@ -295,6 +295,7 @@ func testRegistry() mapAdapterRegistry {
 	if err != nil {
 		panic(err)
 	}
+	abc.RemoveImages = false
 	return mapAdapterRegistry{
 		cmb.Key: cmb,
 		abc.Key: abc,

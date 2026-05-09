@@ -1,0 +1,50 @@
+[
+  {
+    "name": "abc_debit",
+    "type": "abc_debit",
+    "inputs": [
+      {
+        "filename": "abc_debit.pdf",
+        "response": "abc_debit/mineru_response.json"
+      }
+    ],
+    "expected": "abc_debit/expected.csv"
+  },
+  {
+    "name": "cmb_debit",
+    "type": "cmb_debit",
+    "inputs": [
+      {
+        "filename": "cmb_debit.pdf",
+        "response": "cmb_debit/mineru_response.json"
+      }
+    ],
+    "expected": "cmb_debit/expected.csv"
+  },
+  {
+    "name": "cmb_credit",
+    "type": "cmb_credit",
+    "inputs": [
+      {
+        "filename": "cmb_credit.pdf",
+        "response": "cmb_credit/mineru_response.json"
+      }
+    ],
+    "expected": "cmb_credit/expected.csv"
+  },
+  {
+    "name": "zbank_debit",
+    "type": "zbank_debit",
+    "inputs": [
+      {
+        "filename": "zbank_debit_001.pdf",
+        "response": "zbank_debit/mineru_response_1.json"
+      },
+      {
+        "filename": "zbank_debit_002.pdf",
+        "response": "zbank_debit/mineru_response_2.json"
+      }
+    ],
+    "expected": "zbank_debit/expected.csv"
+  }
+]
