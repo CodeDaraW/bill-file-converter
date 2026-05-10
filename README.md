@@ -134,6 +134,20 @@ output/<task_id>/
 - 相同表头的多张表按 MinerU 顺序合并，`source_pages` 使用 MinerU `page_idx + 1`。
 - 非表格文本归一化并去重后写入 `metadata.raw_text`，保留首次出现顺序。
 
+## Profile 设计原则
+
+- CSV 应尽量还原已注册 profile 对应的原始账单表格布局，包括原始列集合和列顺序；不要为了兼容 legacy 输出、下游账务系统或跨银行统一格式而删列、补列或改列。
+- 同一家银行、同一种卡，如果正常发送、补发、导出选项或文件来源导致表格结构明显不同，应优先拆成独立 profile，而不是在同一个 adapter 中堆叠大量条件分支。例如交通银行信用卡正常账单和补发账单分别使用 `bocom_credit_regular` 与 `bocom_credit_reissue`。
+- `Headers` 表示最终导出的规范表头；`HeaderAliases` 只用于接受 MinerU/VLM 对同一张原始表头的不同识别形态，例如中英混排、空格差异或表头拆行后的英文行。
+- `RowGuards` 只做结构性过滤，例如日期列、序号列；不要用它承载业务清洗、交易分类或金额推断。
+- 增加新 profile 前，应优先查看真实 `logger/content_list.json`，确认 MinerU 输出的表格块、表头形态、重复表头、页眉页脚和分组行，而不是只根据截图或 legacy 代码推断。
+
+## 已知限制
+
+- 当前方案依赖 MinerU/VLM 对 PDF 表格的识别结果。若原账单中存在连续多行完全相同或高度相似的交易，VLM 可能把这些行识别成错误数量，例如漏行或膨胀出过多重复行。
+- 不应使用简单去重修复上述问题，因为银行账单中连续重复交易可能是真实发生的交易，去重会误删真实数据。
+- 对这类样本，应使用参考 CSV 或人工核对结果中的行数、金额合计和连续重复交易段；开发新 fixture 时也应避免把无法判断真伪的 VLM 膨胀样本作为唯一验收标准。
+
 ## 验收清单
 
 1. `go test ./...` 通过。
@@ -147,6 +161,7 @@ output/<task_id>/
 9. `result.json.tables[].headers` 精确匹配 profile 允许的表头。
 10. CSV 列顺序和行顺序与 MinerU 表格顺序一致，不包含 metadata 或 title 行。
 11. 预期表格或表头不存在时，转换必须校验失败，不能生成猜测格式的 CSV。
+12. 新增 profile 应至少补一组 fake MinerU e2e fixture；有真实参考 CSV 时，应记录真实 PDF 转换与参考 CSV 的行数、表头和字段差异。
 
 ## Profiles
 

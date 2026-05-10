@@ -22,6 +22,28 @@
     "expected": "bocom_debit/expected.csv"
   },
   {
+    "name": "bocom_credit_regular",
+    "type": "bocom_credit_regular",
+    "inputs": [
+      {
+        "filename": "bocom_credit_regular.pdf",
+        "response": "bocom_credit_regular/mineru_response.json"
+      }
+    ],
+    "expected": "bocom_credit_regular/expected.csv"
+  },
+  {
+    "name": "bocom_credit_reissue",
+    "type": "bocom_credit_reissue",
+    "inputs": [
+      {
+        "filename": "bocom_credit_reissue.pdf",
+        "response": "bocom_credit_reissue/mineru_response.json"
+      }
+    ],
+    "expected": "bocom_credit_reissue/expected.csv"
+  },
+  {
     "name": "cmb_debit",
     "type": "cmb_debit",
     "inputs": [
