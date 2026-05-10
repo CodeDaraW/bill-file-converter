@@ -112,5 +112,16 @@
       }
     ],
     "expected": "zbank_debit/expected.csv"
+  },
+  {
+    "name": "zgc_debit",
+    "type": "zgc_debit",
+    "inputs": [
+      {
+        "filename": "zgc_debit.pdf",
+        "response": "zgc_debit/mineru_response.json"
+      }
+    ],
+    "expected": "zgc_debit/expected.csv"
   }
 ]

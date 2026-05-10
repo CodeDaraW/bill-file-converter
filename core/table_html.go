@@ -8,24 +8,41 @@ import (
 	"golang.org/x/net/html"
 )
 
+type tableCell struct {
+	Text             string
+	RowspanCarryover bool
+}
+
 func parseHTMLTable(tableHTML string) ([][]string, error) {
+	cellRows, err := parseHTMLTableCells(tableHTML)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([][]string, len(cellRows))
+	for i, cellRow := range cellRows {
+		rows[i] = tableCellTexts(cellRow)
+	}
+	return rows, nil
+}
+
+func parseHTMLTableCells(tableHTML string) ([][]tableCell, error) {
 	root, err := html.Parse(strings.NewReader(tableHTML))
 	if err != nil {
 		return nil, err
 	}
 	trs := findNodes(root, "tr")
-	rows := make([][]string, 0, len(trs))
+	rows := make([][]tableCell, 0, len(trs))
 	spans := map[int]map[int]string{}
 
 	for rowIndex, tr := range trs {
-		row := []string{}
+		row := []tableCell{}
 		occupied := map[int]bool{}
 		if pending := spans[rowIndex]; len(pending) > 0 {
 			for col, value := range pending {
 				for len(row) <= col {
-					row = append(row, "")
+					row = append(row, tableCell{})
 				}
-				row[col] = value
+				row[col] = tableCell{Text: value, RowspanCarryover: true}
 				occupied[col] = true
 			}
 		}
@@ -41,9 +58,9 @@ func parseHTMLTable(tableHTML string) ([][]string, error) {
 			for offset := 0; offset < colspan; offset++ {
 				targetCol := col + offset
 				for len(row) <= targetCol {
-					row = append(row, "")
+					row = append(row, tableCell{})
 				}
-				row[targetCol] = text
+				row[targetCol] = tableCell{Text: text}
 				occupied[targetCol] = true
 				for r := 1; r < rowspan; r++ {
 					targetRow := rowIndex + r
@@ -63,6 +80,14 @@ func parseHTMLTable(tableHTML string) ([][]string, error) {
 		return nil, fmt.Errorf("no table rows found")
 	}
 	return rows, nil
+}
+
+func tableCellTexts(row []tableCell) []string {
+	values := make([]string, len(row))
+	for i, cell := range row {
+		values[i] = cell.Text
+	}
+	return values
 }
 
 func findNodes(root *html.Node, tag string) []*html.Node {

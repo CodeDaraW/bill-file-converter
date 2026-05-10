@@ -6,23 +6,34 @@ import (
 )
 
 type Adapter struct {
-	// Key is the stable CLI --type value and must be unique.
+	// Key is required. It is the stable CLI --type value and must be unique.
 	Key string
-	// Name is the human-readable bill type shown in logs and list-types.
+	// Name is required. It is the human-readable bill type shown in logs and
+	// list-types.
 	Name string
-	// Headers is the canonical transaction table header exported to result files.
-	// VLM output must match either Headers or one HeaderAliases entry.
+	// Headers is required. It is the canonical transaction table header exported
+	// to result files. MinerU/VLM output must match either Headers or one
+	// HeaderAliases entry before any rows are accepted.
 	Headers []string
-	// HeaderAliases lists accepted VLM header variants. When an alias is
-	// matched, the exported header is still Headers.
+	// HeaderAliases is optional. Use it only for known MinerU/VLM variants of the
+	// same source table header, such as stamp text merged into a header cell or
+	// bilingual header rows. When an alias is matched, the exported header is
+	// still Headers.
 	HeaderAliases [][]string
-	// RowGuards identify real data rows after the header. They are intentionally
-	// structural checks, usually on a date column, not business-rule cleanup.
+	// RowGuards is strongly recommended for transaction tables. It identifies
+	// real data rows after the header using structural checks, usually on a date
+	// or sequence-number column. Do not use it for business-rule cleanup.
 	RowGuards []RowGuard
-	// RemoveImages rewrites the input PDF with raster images removed before
-	// parsing. Enable this only for profiles where image overlays such as
-	// watermarks are known to degrade extraction; leave it off otherwise because
-	// PDF rewriting can alter document structure.
+	// BlankRowspanCarryoverColumns is a special-case cleanup knob and should be
+	// left unset unless the original bank table visually spans a value across
+	// later rows but those later rows semantically have empty cells. Columns are
+	// zero-based in Headers; only values carried over from an HTML rowspan are
+	// blanked, while the original source cell is preserved.
+	BlankRowspanCarryoverColumns []int
+	// RemoveImages is an optional preprocessing workaround. Enable it only for
+	// profiles where image overlays such as watermarks are known to degrade
+	// extraction; leave it off otherwise because PDF rewriting can alter document
+	// structure.
 	RemoveImages bool
 }
 
@@ -36,11 +47,12 @@ type RowGuard struct {
 type RowGuardFormat string
 
 const (
-	RowGuardFormatYYYYMMDD         RowGuardFormat = "YYYYMMDD"
-	RowGuardFormatYYYYMMDDHHMMSS   RowGuardFormat = "YYYYMMDDHH:mm:ss"
-	RowGuardFormatYYYYDashMMDashDD RowGuardFormat = "YYYY-MM-DD"
-	RowGuardFormatMMSlashDD        RowGuardFormat = "MM/DD"
-	RowGuardFormatPositiveInteger  RowGuardFormat = "positive_integer"
+	RowGuardFormatYYYYMMDD               RowGuardFormat = "YYYYMMDD"
+	RowGuardFormatYYYYMMDDHHMMSS         RowGuardFormat = "YYYYMMDDHH:mm:ss"
+	RowGuardFormatYYYYDashMMDashDDHHMMSS RowGuardFormat = "YYYY-MM-DD HH:mm:ss"
+	RowGuardFormatYYYYDashMMDashDD       RowGuardFormat = "YYYY-MM-DD"
+	RowGuardFormatMMSlashDD              RowGuardFormat = "MM/DD"
+	RowGuardFormatPositiveInteger        RowGuardFormat = "positive_integer"
 )
 
 type registry struct {
@@ -68,6 +80,7 @@ func BuiltinRegistry() *registry {
 		bocomDebitAdapter(),
 		cmbCreditAdapter(),
 		cmbDebitAdapter(),
+		zgcDebitAdapter(),
 		zbankDebitAdapter(),
 	)
 }

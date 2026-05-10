@@ -22,7 +22,7 @@ func DocumentFromMinerUContent(contentList []MinerUContent, adapter adapters.Ada
 		if strings.ToLower(item.Type) != "table" || strings.TrimSpace(item.TableBody) == "" {
 			continue
 		}
-		rows, err := parseHTMLTable(item.TableBody)
+		rows, err := parseHTMLTableCells(item.TableBody)
 		if err != nil {
 			doc.Tables = append(doc.Tables, Table{Warnings: []string{fmt.Sprintf("parse table html: %s", err)}})
 			continue
@@ -53,7 +53,7 @@ func dedupeRawText(contentList []MinerUContent) string {
 	return strings.Join(values, "\n")
 }
 
-func tableFromRows(rows [][]string, adapter adapters.Adapter, page int) (Table, bool) {
+func tableFromRows(rows [][]tableCell, adapter adapters.Adapter, page int) (Table, bool) {
 	headerIndex, headers := matchingHeaderRow(rows, adapter)
 	if headerIndex < 0 {
 		return Table{}, false
@@ -63,16 +63,19 @@ func tableFromRows(rows [][]string, adapter adapters.Adapter, page int) (Table, 
 		SourcePages: mergeSortedUniqueInts(nil, page),
 	}
 	for _, row := range rows[headerIndex+1:] {
-		if stringRowIsEmpty(row) || rowLooksLikeHeader(row, adapter, headers) {
+		if stringRowIsEmpty(tableCellTexts(row)) || rowLooksLikeHeader(tableCellTexts(row), adapter, headers) {
 			continue
 		}
 		normalized := normalizeRowWidth(row, len(headers))
-		if !rowMatchesGuards(normalized, adapter) {
+		if !rowMatchesGuards(tableCellTexts(normalized), adapter) {
 			continue
 		}
 		cells := make([]*string, len(normalized))
-		for i, value := range normalized {
-			value = normalizeText(value)
+		for i, cell := range normalized {
+			if cell.RowspanCarryover && adapterBlanksRowspanCarryoverColumn(adapter, i) {
+				continue
+			}
+			value := normalizeText(cell.Text)
 			if value == "" {
 				continue
 			}
@@ -86,9 +89,9 @@ func tableFromRows(rows [][]string, adapter adapters.Adapter, page int) (Table, 
 	return table, true
 }
 
-func matchingHeaderRow(rows [][]string, adapter adapters.Adapter) (int, []string) {
+func matchingHeaderRow(rows [][]tableCell, adapter adapters.Adapter) (int, []string) {
 	for rowIndex, row := range rows {
-		normalized := normalizeStringRow(row)
+		normalized := normalizeStringRow(tableCellTexts(row))
 		if rowMatchesHeaderCandidate(normalized, adapter.Headers) {
 			return rowIndex, append([]string(nil), adapter.Headers...)
 		}
@@ -99,6 +102,15 @@ func matchingHeaderRow(rows [][]string, adapter adapters.Adapter) (int, []string
 		}
 	}
 	return -1, nil
+}
+
+func adapterBlanksRowspanCarryoverColumn(adapter adapters.Adapter, column int) bool {
+	for _, candidate := range adapter.BlankRowspanCarryoverColumns {
+		if candidate == column {
+			return true
+		}
+	}
+	return false
 }
 
 func rowLooksLikeHeader(row []string, adapter adapters.Adapter, headers []string) bool {
@@ -158,13 +170,19 @@ func normalizeStringRow(row []string) []string {
 	return normalized
 }
 
-func normalizeRowWidth(row []string, width int) []string {
-	normalized := normalizeStringRow(row)
+func normalizeRowWidth(row []tableCell, width int) []tableCell {
+	normalized := make([]tableCell, len(row))
+	for i, cell := range row {
+		normalized[i] = tableCell{
+			Text:             normalizeText(cell.Text),
+			RowspanCarryover: cell.RowspanCarryover,
+		}
+	}
 	if len(normalized) > width {
 		return normalized[:width]
 	}
 	for len(normalized) < width {
-		normalized = append(normalized, "")
+		normalized = append(normalized, tableCell{})
 	}
 	return normalized
 }
@@ -192,6 +210,9 @@ func valueMatchesGuardFormat(value string, format adapters.RowGuardFormat) bool 
 	case adapters.RowGuardFormatYYYYMMDDHHMMSS:
 		parsed, err := time.Parse("2006010215:04:05", value)
 		return err == nil && parsed.Format("2006010215:04:05") == value
+	case adapters.RowGuardFormatYYYYDashMMDashDDHHMMSS:
+		parsed, err := time.Parse("2006-01-02 15:04:05", value)
+		return err == nil && parsed.Format("2006-01-02 15:04:05") == value
 	case adapters.RowGuardFormatMMSlashDD:
 		parsed, err := time.Parse("2006/01/02", "2000/"+value)
 		return err == nil && parsed.Format("01/02") == value
