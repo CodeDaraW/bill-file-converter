@@ -33,6 +33,28 @@
     "expected": "boc_debit/expected.csv"
   },
   {
+    "name": "boc_credit_regular",
+    "type": "boc_credit_regular",
+    "inputs": [
+      {
+        "filename": "boc_credit_regular.pdf",
+        "response": "boc_credit_regular/mineru_response.json"
+      }
+    ],
+    "expected": "boc_credit_regular/expected.csv"
+  },
+  {
+    "name": "boc_credit_reissue",
+    "type": "boc_credit_reissue",
+    "inputs": [
+      {
+        "filename": "boc_credit_reissue.pdf",
+        "response": "boc_credit_reissue/mineru_response.json"
+      }
+    ],
+    "expected": "boc_credit_reissue/expected.csv"
+  },
+  {
     "name": "bocom_credit_regular",
     "type": "bocom_credit_regular",
     "inputs": [

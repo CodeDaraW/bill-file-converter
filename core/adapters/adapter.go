@@ -61,6 +61,8 @@ func BuiltinRegistry() *registry {
 	return NewRegistry(
 		abcDebitAdapter(),
 		bocDebitAdapter(),
+		bocCreditRegularAdapter(),
+		bocCreditReissueAdapter(),
 		bocomCreditRegularAdapter(),
 		bocomCreditReissueAdapter(),
 		bocomDebitAdapter(),
