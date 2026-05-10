@@ -22,6 +22,17 @@
     "expected": "bocom_debit/expected.csv"
   },
   {
+    "name": "boc_debit",
+    "type": "boc_debit",
+    "inputs": [
+      {
+        "filename": "boc_debit.pdf",
+        "response": "boc_debit/mineru_response.json"
+      }
+    ],
+    "expected": "boc_debit/expected.csv"
+  },
+  {
     "name": "bocom_credit_regular",
     "type": "bocom_credit_regular",
     "inputs": [
