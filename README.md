@@ -5,7 +5,8 @@
 
 使用 OCR/VLM 将银行账单 PDF 转换为 CSV 的命令行工具。
 
-`bill-file-converter` 面向从银行 App、网银或邮箱导出的账单 PDF。它通过 OCR/VLM 提取 PDF 表格，再按已注册账单类型清洗、校验并导出严格表格 CSV。旧的纯前端实现位于 [legacy/](legacy/)。
+> [!NOTE]
+> 旧版本基于 pdf.js 的纯前端实现位于 `legacy-pdfjs` 分支
 
 ## Features
 
