@@ -85,6 +85,10 @@ func (c *MinerUHTTPClient) Ping(ctx context.Context) error {
 
 func (c *MinerUHTTPClient) Parse(ctx context.Context, file InputFile) (MinerUParseResult, error) {
 	rawRequest := rawMinerURequest(c.config, file)
+	file, err := retryableInputFile(file)
+	if err != nil {
+		return MinerUParseResult{RawRequest: rawRequest}, err
+	}
 	var last MinerUParseResult
 	attempts := c.config.MaxRetries + 1
 	if attempts < 1 {
@@ -110,6 +114,21 @@ func (c *MinerUHTTPClient) Parse(ctx context.Context, file InputFile) (MinerUPar
 		}
 	}
 	return last, lastErr
+}
+
+func retryableInputFile(file InputFile) (InputFile, error) {
+	if file.Reader == nil {
+		return file, nil
+	}
+	if _, ok := file.Reader.(io.Seeker); ok {
+		return file, nil
+	}
+	data, err := io.ReadAll(file.Reader)
+	if err != nil {
+		return file, err
+	}
+	file.Reader = bytes.NewReader(data)
+	return file, nil
 }
 
 func (c *MinerUHTTPClient) parseOnce(ctx context.Context, file InputFile, rawRequest string) (MinerUParseResult, int, error) {
@@ -189,6 +208,11 @@ func addMultipartFile(writer *multipart.Writer, file InputFile) error {
 		return err
 	}
 	if file.Reader != nil {
+		if seeker, ok := file.Reader.(io.Seeker); ok {
+			if _, err := seeker.Seek(0, io.SeekStart); err != nil {
+				return err
+			}
+		}
 		_, err = io.Copy(part, file.Reader)
 		return err
 	}

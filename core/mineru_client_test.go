@@ -3,10 +3,12 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -60,6 +62,63 @@ func TestMinerUHTTPClientPostsMultipartToFileParse(t *testing.T) {
 	}
 	if len(result.ContentList) != 1 || result.ContentList[0].Text != "ok" {
 		t.Fatalf("unexpected content list: %#v", result.ContentList)
+	}
+}
+
+func TestMinerUHTTPClientRetriesReaderBackedFileWithFullBody(t *testing.T) {
+	const pdfBody = "%PDF-1.7 reader backed input"
+	var uploads []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			t.Fatalf("parse multipart: %v", err)
+		}
+		files := r.MultipartForm.File["files"]
+		if len(files) != 1 {
+			t.Fatalf("files = %d", len(files))
+		}
+		file, err := files[0].Open()
+		if err != nil {
+			t.Fatalf("open upload: %v", err)
+		}
+		data, err := io.ReadAll(file)
+		_ = file.Close()
+		if err != nil {
+			t.Fatalf("read upload: %v", err)
+		}
+		uploads = append(uploads, string(data))
+		if len(uploads) == 1 {
+			http.Error(w, "try again", http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"content_list": []map[string]any{{"type": "text", "text": "ok"}},
+		})
+	}))
+	defer server.Close()
+	client, err := NewMinerUHTTPClient(MinerUHTTPConfig{
+		BaseURL:    server.URL,
+		MaxRetries: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.Parse(context.Background(), InputFile{
+		Reader:   io.NopCloser(strings.NewReader(pdfBody)),
+		FileName: "reader.pdf",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.ContentList) != 1 || result.ContentList[0].Text != "ok" {
+		t.Fatalf("unexpected content list: %#v", result.ContentList)
+	}
+	if len(uploads) != 2 {
+		t.Fatalf("uploads = %d", len(uploads))
+	}
+	for i, upload := range uploads {
+		if upload != pdfBody {
+			t.Fatalf("upload %d = %q", i, upload)
+		}
 	}
 }
 
